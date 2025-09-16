@@ -1,7 +1,3 @@
---// =========================================================
---// LimitHub | Fish It v0.1 [All Version]  (FULL • Static Player by Catch • Rarity Group • Mutation-aware)
---// =========================================================
-
 local G = (getgenv and getgenv()) or _G
 if G.__LimitHub_Running then
     warn("[LimitHub] Script Already Running")
@@ -43,17 +39,19 @@ local Window = Library:CreateWindow({
 local Tabs = {
     Main     = Window:AddTab({ Title = "Main",     Icon = "star" }),
     Player   = Window:AddTab({ Title = "Player",   Icon = "user" }),
+    Event    = Window:AddTab({ Title = "Event",    Icon = "eye" }),
     Weather  = Window:AddTab({ Title = "Weather",  Icon = "cloud" }),
-    Enchant  = Window:AddTab({ Title = "Enchant",  Icon = "wand"}),
+    Enchant  = Window:AddTab({ Title = "Enchant",  Icon = "wand" }),
     Shop     = Window:AddTab({ Title = "Shop",     Icon = "shopping-cart" }),
-    Islands  = Window:AddTab({ Title = "Islands",  Icon = "map" }),
-    NPC      = Window:AddTab({ Title = "NPC",      Icon = "bot" }),
+    Teleport  = Window:AddTab({ Title = "Teleport",  Icon = "map" }),
     Settings = Window:AddTab({ Title = "Settings", Icon = "cog" })
 }
 Window:SelectTab(1)
 
 local function NotifyHub(text)
-    Library:Notify({ Title = "LimitHub", Content = text, Duration = 5 })
+    pcall(function()
+        Library:Notify({ Title = "LimitHub", Content = text, Duration = 5 })
+    end)
 end
 
 -- =======================================================================
@@ -80,7 +78,6 @@ WebhookState._raritySet   = {}
 
 local function _normR(s) return (tostring(s or ""):gsub("^%s+",""):gsub("%s+$",""):lower()) end
 
--- IMPORTANT for Multi=true: Values harus dictionary label->string
 local RarityValues = {
     Common     = "Common",
     Uncommon   = "Uncommon",
@@ -96,7 +93,6 @@ local function _rebuildRaritySet(vals)
     table.clear(WebhookState.rarityFilter)
     if type(vals) ~= "table" then return end
 
-    -- terima dua bentuk: map {Common=true,...} atau array {"Common","Rare",...}
     local hasNumeric = false
     for k,_ in pairs(vals) do if typeof(k) == "number" then hasNumeric = true break end end
 
@@ -124,8 +120,8 @@ end
 WebhookSection:AddDropdown("RarityWebhook", {
     Title = "Choose Rarity Webhook",
     Description = "Only show rarity you want (empty = all)",
-    Values = RarityValues,  -- dictionary label->string (AMAN untuk Multi=true)
-    Default = {},           -- kosongkan default agar tidak kirim string ke loader
+    Values = RarityValues,
+    Default = {},
     Multi = true,
     Callback = function(vals)
         _rebuildRaritySet(vals)
@@ -177,22 +173,80 @@ local function sendWebhookEmbed(title, fields, state)
     end)
 end
 
--- =======================================================================
--- Resolver Fish (rarity + rbxassetid -> thumbnail)
--- =======================================================================
+-- === API wrapper (dipakai SendFishPublic)
+local function LRM_SEND_WEBHOOK(url, payload)
+    local req = (syn and syn.request) or (http and http.request) or http_request or request
+    if not (req and type(url)=="string" and #url>0) then return end
+    pcall(function()
+        req({
+            Url = url,
+            Method = "POST",
+            Headers = {["Content-Type"]="application/json"},
+            Body = HttpService:JSONEncode(payload)
+        })
+    end)
+end
+
 local function _norm(s) return (tostring(s or ""):lower():gsub("[^%w]+"," "):gsub("%s+"," ")) end
 
 local TierMap = {
     [1]="Common",[2]="Uncommon",[3]="Rare",[4]="Epic",
-    [5]="Legendary / Mythic",[6]="Mythic",[7]="Secret",
-    [90]="Trophy",[95]="Collectible",[100]="Exclusive",[1000]="DEV",
+    [5]="Legendary",[6]="Mythic",[7]="Secret",
 }
 local RarityColor = {
     Common=0x95A5A6, Uncommon=0x2ECC71, Rare=0x3498DB, Epic=0x9B59B6,
     Legendary=0xF1C40F, Mythic=0xE67E22, Secret=0xE74C3C
 }
 
-local _fishCache = {}  -- key: norm(name) -> {name, rarity, iconUrl}
+getgenv().tierArray = getgenv().tierArray or {
+    { Name="Common",    Rarity=1,       TierColor=ColorSequence.new(Color3.fromRGB(255, 250, 246)), Tier=1 },
+    { Name="Uncommon",  Rarity=0.02,    TierColor=ColorSequence.new(Color3.fromRGB(195, 255, 85)),  Tier=2 },
+    { Name="Rare",      Rarity=0.004,   TierColor=ColorSequence.new(Color3.fromRGB(85, 162, 255)),  Tier=3 },
+    { Name="Epic",      Rarity=0.001,   TierColor=ColorSequence.new(Color3.fromRGB(173, 79, 255)),  Tier=4 },
+    { Name="Legendary", Rarity=0.0002,  TierColor=ColorSequence.new(Color3.fromRGB(255, 184, 42)),  Tier=5 },
+    { Name="Mythic",    Rarity=0.00002, TierColor=ColorSequence.new(Color3.fromRGB(255, 24, 24)),   Tier=6 },
+    { Name="SECRET",    Rarity=0.000004, TierColor=ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(23, 255, 151)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(11, 149, 255)),
+    }), Tier=7 },
+}
+
+local function getRarityInfo(rarityValue)
+    for _, rarityData in ipairs(getgenv().tierArray) do
+        if rarityData.Rarity == rarityValue then
+            return rarityData
+        end
+    end
+    return nil
+end
+
+local MUT_PREFIX = { ghost=true, stone=true, gold=true, albino=true, shiny=true, big=true, corrupt=true }
+local function baseNameForRarity(displayName)
+    local words = {}
+    for w in tostring(displayName or ""):gmatch("%S+") do table.insert(words, w) end
+    if #words == 0 then return displayName end
+    local first = words[1]:lower()
+    if MUT_PREFIX[first] and #words >= 2 then
+        table.remove(words, 1)
+        return table.concat(words, " ")
+    end
+    return displayName
+end
+
+local function tierNameFromTier(tierNumber)
+    if not tierNumber then return nil end
+    local tn = TierMap and TierMap[tierNumber]
+    if tn then return tn end
+    local arr = getgenv().tierArray
+    if type(arr) == "table" then
+        for _, it in ipairs(arr) do
+            if tonumber(it.Tier) == tonumber(tierNumber) then
+                return tostring(it.Name)
+            end
+        end
+    end
+    return nil
+end
 
 local function _extractAssetId(s)
     if type(s)~="string" then return nil end
@@ -213,35 +267,68 @@ local function _thumbFromAssetId(assetStr)
     return nil
 end
 
-local function resolveFishInfoByName(name)
-    if not name or name=="" then return nil end
-    local key = _norm(name)
-    if _fishCache[key] then return _fishCache[key] end
-
+-- Cari ModuleScript item by Data.Name
+local function findItemModule(fishDisplayName)
     local Items = ReplicatedStorage:FindFirstChild("Items")
-    if not Items then return nil end
+    if not Items then return nil, nil end
+    local target = tostring(fishDisplayName or ""):lower():gsub("%s+"," ")
 
-    local found
     for _, ms in ipairs(Items:GetDescendants()) do
         if ms:IsA("ModuleScript") then
             local ok, mod = pcall(require, ms)
-            if ok and type(mod)=="table" then
+            if ok and type(mod) == "table" then
                 local d = mod.Data or mod.data or mod
-                if d and d.Name and _norm(d.Name)==key then
-                    local rarity = (d.Tier and TierMap[d.Tier]) or "(unknown)"
-                    found = {
-                        name = d.Name,
-                        rarity = rarity,
-                        iconUrl = d.Icon and _thumbFromAssetId(d.Icon) or nil, -- KONVERSI rbxassetid -> thumbnail URL
-                    }
-                    break
+                local nm = d and d.Name and tostring(d.Name):lower():gsub("%s+"," ")
+                if nm and nm == target then
+                    return ms, d, mod
                 end
             end
         end
     end
+    return nil, nil
+end
 
-    _fishCache[key] = found
-    return found
+local _fishCache = {}  -- key: norm(name) -> {name, rarity, tier, sellPrice, chance, iconUrl}
+
+-- ==== SellPrice dari ROOT module (modTable.SellPrice) ====
+local function resolveFishInfoByName(name)
+    if not name or name=="" then return nil end
+    local key = _norm(name)
+    if _fishCache[key] ~= nil then return _fishCache[key] or nil end
+
+    local _, data, modTable = findItemModule(name)
+    if data then
+        local tierNum   = tonumber(data.Tier)
+        local tierName  = tierNameFromTier(tierNum) or "(unknown)"
+        local rarity    = tierName
+
+        local sellPrice = tonumber(modTable and modTable.SellPrice) or tonumber(data.SellPrice)
+
+        local chance    = nil
+        if data.Probability and data.Probability.Chance then
+            chance = tonumber(data.Probability.Chance)
+        end
+
+        local iconUrl = nil
+        if data.Icon then
+            iconUrl = _thumbFromAssetId(data.Icon)
+        end
+
+        local info = {
+            name     = data.Name or name,
+            tier     = tierNum,
+            tierName = tierName,
+            rarity   = rarity,
+            sellPrice= sellPrice,
+            chance   = chance,
+            iconUrl  = iconUrl
+        }
+        _fishCache[key] = info
+        return info
+    end
+
+    _fishCache[key] = false
+    return nil
 end
 
 local function _passRarityFilter(r)
@@ -268,7 +355,6 @@ local function Stats_Reset()
     Stats.dirty = true
 end
 
--- SECTION di tab Webhook
 local PlayerStatsSection = WebhookTab:AddSection("Player Stats Webhook")
 
 WebhookState.statsUrl     = WebhookState.statsUrl     or ""
@@ -302,35 +388,15 @@ PlayerStatsSection:AddButton({
     end
 })
 
--- waktu lokal aman
 local function _clockStr()
     local ok, s = pcall(function() return os.date("%H:%M:%S") end)
     return ok and s or "00:00:00"
 end
 
--- mutation prefixes (abaikan saat klasifikasi rarity; tampilkan nama aslinya)
-local MUT_PREFIX = {
-    ["ghost"]=true, ["stone"]=true, ["gold"]=true,
-    ["albino"]=true, ["shiny"]=true, ["big"]=true, ["corrupt"]=true,
-}
-local function baseNameForRarity(displayName)
-    local words = {}
-    for w in tostring(displayName or ""):gmatch("%S+") do table.insert(words, w) end
-    if #words == 0 then return displayName end
-    local first = words[1]:lower()
-    if MUT_PREFIX[first] and #words >= 2 then
-        table.remove(words, 1)
-        return table.concat(words, " ")
-    end
-    return displayName
-end
-
--- urutan prioritas rarity untuk section
 local RARITY_ORDER = { "Secret","Mythic","Legendary","Epic","Rare","Common","Uncommon" }
 local RARITY_INDEX = {}
 for i, r in ipairs(RARITY_ORDER) do RARITY_INDEX[r] = i end
 
--- build embeds: grouped by rarity (bold), hanya show rarity yang ada
 local function buildStatsEmbeds_fromCounts()
     local groups = {}
     local any = false
@@ -339,7 +405,7 @@ local function buildStatsEmbeds_fromCounts()
         local base = baseNameForRarity(dispName)
         local info = resolveFishInfoByName(base)
         local rarity = (info and info.rarity) or "(unknown)"
-        if rarity == "Legendary / Mythic" then rarity = "Legendary" end
+        if rarity == "Legendary" then rarity = "Legendary" end
 
         if RARITY_INDEX[rarity] then
             any = true
@@ -349,14 +415,15 @@ local function buildStatsEmbeds_fromCounts()
     end
 
     local embeds = {{
-        author = { name = "LimitHub", icon_url = AUTHOR_ICON },
-        title  = "LimitHub - Static Player",
-        description = string.format("Player Name : ||%s||", LocalPlayer.Name),
-        color  = 0x00BFFF,
-        thumbnail = { url = AUTHOR_ICON },
-        footer = { text = string.format("discord.gg/limithub • Last update %s", _clockStr()) },
-        timestamp = DateTime.now():ToIsoDate()
+        author      = { name = "LimitHub", icon_url = AUTHOR_ICON },
+        title       = "LimitHub – Static Player",
+        description = ("Player Name : ||%s||"):format(LocalPlayer.Name),
+        color       = 0x00BFFF,
+        thumbnail   = { url = AUTHOR_ICON },
+        footer      = { text = ("discord.gg/limithub  •  Last Update : %s"):format(_clockStr()) },
+        timestamp   = DateTime.now():ToIsoDate(),
     }}
+
     if not any then return embeds end
 
     local sections = {}
@@ -438,8 +505,37 @@ task.spawn(function()
     end
 end)
 
+-- === API kamu (webhook pribadi) - auto icon dari rbxasset
+local function SendFishPublic(Name, Rarity, Sell, Weight)
+    local base    = baseNameForRarity(Name)
+    local info    = resolveFishInfoByName(base)
+    local iconUrl = (info and info.iconUrl)
+        or "https://cdn.discordapp.com/attachments/1211984599354445905/1405772122684391445/file_00000000cbac622f8aa3df1e8d640e88.png"
+
+    LRM_SEND_WEBHOOK(
+        "https://discord.com/api/webhooks/1416371080163233862/cNqcc3KB_WBuqMN3FyyphYJWAGjV0ks4jO01ua2G39U3xRlQ3tsvZ88xEsXXFGB5BgPY",
+        {
+            username = "LimitHub Notification",
+            embeds = {
+                {
+                    title = ":confetti_ball: Congratulations! :confetti_ball: ",
+                    description = "Found by: <@%DISCORD_ID%>",
+                    color = 0xFF00FF,
+                    thumbnail = { url = iconUrl },
+                    fields = {
+                        { name = "Fish Name",  value = tostring(Name or "-"),   inline = true },
+                        { name = "Rairty",     value = tostring(Rarity or "-"), inline = true },
+                        { name = "Sell Price", value = tostring(Sell or "-"),   inline = true },
+                        { name = "Weight",     value = tostring(Weight or "-"), inline = true },
+                    }
+                }
+            }
+        }
+    )
+end
+
 -- =======================================================================
--- Sending catch webhook (MUTATION-AWARE + THUMBNAIL dari rbxassetid)
+-- Sending catch webhook (thumbnail + Sell Price) + PRIVATE hook on Secret
 -- =======================================================================
 local function sendCatchEmbedOnce(fishName, oddsText, weightNumber)
     local displayName = tostring(fishName or "")
@@ -448,8 +544,7 @@ local function sendCatchEmbedOnce(fishName, oddsText, weightNumber)
 
     Stats_Add(displayName, 1)
 
-    local effectiveRarity = (info and info.rarity) or "(unknown)"
-    if effectiveRarity == "Legendary / Mythic" then effectiveRarity = "Legendary" end
+    local effectiveRarity = (info and info.rarity) or "Unknown"
     if not _passRarityFilter(effectiveRarity) then return end
 
     if not (WebhookState.enabled and type(WebhookState.url)=="string" and #WebhookState.url>0) then return end
@@ -457,18 +552,30 @@ local function sendCatchEmbedOnce(fishName, oddsText, weightNumber)
     if not req then return end
 
     local fields = {}
-    if oddsText then table.insert(fields, { name="Odds", value=tostring(oddsText), inline=true }) end
-    if weightNumber then table.insert(fields, { name="Weight", value=string.format("%.2f kg", weightNumber), inline=true }) end
+    table.insert(fields, { name="Rarity", value=tostring(info and info.tierName or effectiveRarity), inline=true })
+    if info and info.sellPrice ~= nil then
+        table.insert(fields, { name="Sell Price", value=tostring(info.sellPrice), inline=true })
+    end
+    if oddsText and oddsText ~= "" then
+        table.insert(fields, { name="Odds", value=tostring(oddsText), inline=true })
+    elseif info and info.chance and info.chance > 0 then
+        local inv = math.max(1, math.floor(0.5 + (1 / info.chance)))
+        table.insert(fields, { name="Odds", value=("1 in "..inv), inline=true })
+    end
+    if weightNumber then
+        table.insert(fields, { name="Weight", value=string.format("%.2f kg", weightNumber), inline=true })
+    end
 
     local embed = {
         author = { name = "LimitHub", icon_url = AUTHOR_ICON },
-        title = displayName,
+        title = string.format("%s\nPlayer Name : ||%s||", displayName, LocalPlayer.Name),
         description = effectiveRarity,
         color = RarityColor[effectiveRarity] or 0x3498DB,
-        fields = (#fields>0) and fields or nil,
+        fields = (#fields > 0) and fields or nil,
         footer = { text = "discord.gg/limithub" },
         timestamp = DateTime.now():ToIsoDate()
     }
+
     if info and info.iconUrl then
         embed.thumbnail = { url = info.iconUrl }
     end
@@ -481,8 +588,15 @@ local function sendCatchEmbedOnce(fishName, oddsText, weightNumber)
             Body = HttpService:JSONEncode({ content = "", embeds = { embed } })
         })
     end)
-end
 
+    -- Hanya kirim ke webhook pribadi kalau Secret (tier 7)
+    local isSecret = (info and ((info.tier == 1) or (tostring(info.rarity or ""):lower() == "common"))) or false 
+    if isSecret then
+        local sellStr   = (info and info.sellPrice) and tostring(info.sellPrice) or "—"
+        local weightStr = weightNumber and string.format("%.2f kg", weightNumber) or "—"
+        SendFishPublic(displayName, "Secret", sellStr, weightStr)
+    end
+end
 -- =======================================================================
 -- AUTO FISH, SELL, PLAYER, SHOP, ISLANDS, NPC, SETTINGS
 -- =======================================================================
@@ -501,6 +615,7 @@ local PurchaseBaitRF   = net:WaitForChild("RF/PurchaseBait")
 
 local autofish, perfectCast, ijump = false, true, false
 local autoFishTask
+local rodCharged = false
 
 LocalPlayer.Idled:Connect(function()
     VirtualUser:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
@@ -606,7 +721,6 @@ local function __disableHideFishingGui()
     table.clear(__saved)
 end
 
-local rodCharged = false
 local function safeFinish()
     if rodCharged and finishRemote and finishRemote.Parent then
         local ok = pcall(function() finishRemote:FireServer() end)
@@ -720,6 +834,19 @@ FarmSection:AddToggle("AutoFishing v2", {
     end
 })
 
+-- ====== SELL ALL button (fix path RF/SellAllItems) ======
+    local function captureBasis(cf)
+        return { position = cf.Position, rightVector = cf.RightVector, upVector = cf.UpVector, lookVector = cf.LookVector, cframe = cf }
+    end
+    local function restoreFromBasis(hrp, basis)
+        hrp.CFrame = CFrame.fromMatrix(basis.position, basis.rightVector, basis.upVector, -basis.lookVector)
+    end
+    local function findSellRemote()
+        local rf = ReplicatedStorage:FindFirstChild("RF")
+        if rf and rf:FindFirstChild("SellAllItems") then return rf.SellAllItems end
+        return ReplicatedStorage:FindFirstChild("SellAllItems", true)
+    end
+
 FarmSection:AddButton({
     Title = "Sell All Fishes",
     Description = "Automatically sell all Fishes",
@@ -732,18 +859,542 @@ FarmSection:AddButton({
         local sellerPos = Vector3.new(-32, 5, 2885)
         local sellRemote = net:WaitForChild("RF/SellAllItems")
         task.spawn(function()
-            hrp.CFrame = CFrame.new(sellerPos + Vector3.new(0, 3, 0))
+            hrp.CFrame = CFrame.new(sellerPos + Vector3.new(0, 0, 0))
             task.wait(0.5)
             pcall(function() sellRemote:InvokeServer() end)
             -- reset statistik agar sinkron setelah jual
             Stats_Reset()
             NotifyHub("Sold all fishes & reset local stats")
-            hrp.CFrame = CFrame.new(originalPos + Vector3.new(0, 3, 0))
+            hrp.CFrame = CFrame.new(originalPos + Vector3.new(0, 0, 0))
         end)
     end
 })
 
--- Player Section
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- (opsional) kalau butuh Humanoid:
+local function getHRP()
+    local char = (workspace:FindFirstChild("Characters") and workspace.Characters:FindFirstChild(LocalPlayer.Name))
+                 or LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    return char and char:FindFirstChild("HumanoidRootPart"), char
+end
+
+--// ================== CONFIG ==================
+local SELL_TARGET = 4998  -- ganti 4998 buat real use
+local sellerPos   = Vector3.new(50, 17, 2867)
+
+--// ================== UI READ: BAG COUNT ==================
+local function getCurrentCount()
+    local gui = LocalPlayer:FindFirstChild("PlayerGui"); if not gui then return nil end
+    local bp  = gui:FindFirstChild("Backpack") or gui:FindFirstChild("BackpackGui") or gui:FindFirstChild("Inventory")
+    if not bp then return nil end
+    local lbl = bp:FindFirstChild("BagSize", true)
+    if not (lbl and lbl:IsA("TextLabel")) then return nil end
+    local text = tostring(lbl.Text or "")
+    local cur = text:match("^(%d+)") or text:match("(%d+)")
+    return cur and tonumber(cur) or nil
+end
+
+--// ================== BASIS SAVE/RESTORE ==================
+local function captureBasis(cf)
+    return {
+        cf    = cf,                  -- simpan cf utuh (paling aman)
+        pos   = cf.Position,         -- data tambahan (fallback)
+        right = cf.RightVector,
+        up    = cf.UpVector,
+        look  = cf.LookVector,
+    }
+end
+
+local function restoreFromBasis(hrp, basis)
+    if not (hrp and basis) then return end
+
+    if basis.cf then
+        hrp.CFrame = basis.cf
+    else
+        -- fallback: rebuild matrix (ingat z = -look)
+        local right = basis.right.Unit
+        local up    = (basis.up - right * basis.up:Dot(right)).Unit
+        local z     = (-basis.look - right * (-basis.look):Dot(right) - up * (-basis.look):Dot(up)).Unit
+        hrp.CFrame  = CFrame.fromMatrix(basis.pos, right, up, z)
+    end
+
+    -- nolkan velocity biar gak mental
+    pcall(function()
+        hrp.AssemblyLinearVelocity  = Vector3.zero
+        hrp.AssemblyAngularVelocity = Vector3.zero
+    end)
+end
+
+--// ================== REMOTE RESOLVER (GUARD) ==================
+local function resolveSellRemote()
+    -- prioritas: variable global 'net' kalau ada
+    if typeof(net) == "Instance" and net.FindFirstChild then
+        local rf = net:FindFirstChild("RF/SellAllItems") or net:FindFirstChild("SellAllItems") or net:FindFirstChild("RF_SellAllItems")
+        if rf then return rf end
+    end
+    -- fallback cari di ReplicatedStorage kalau struktur game beda
+    local RS = game:GetService("ReplicatedStorage")
+    local candidates = {
+        "RF/SellAllItems", "Remotes/RF/SellAllItems",
+        "RF_SellAllItems", "SellAllItems"
+    }
+    for _, path in ipairs(candidates) do
+        local node = RS
+        for seg in string.gmatch(path, "[^/]+") do
+            node = node:FindFirstChild(seg)
+            if not node then break end
+        end
+        if node then return node end
+    end
+    return nil
+end
+
+--// ================== STATE ==================
+local isSelling = false
+local nextAllowedSellAt = 0
+local autoSellEnabled = false
+
+--// ================== TOGGLE ==================
+FarmSection:AddToggle("AutoSellFish", {
+    Title       = "Auto Sell Fish",
+    Description = "Auto sell when backpack full",
+    Default     = false,
+    Mode        = "Toggle",
+    Callback = function(state)
+        autoSellEnabled = state
+        if not state then
+            isSelling = false
+            return
+        end
+
+        task.spawn(function()
+            while autoSellEnabled do
+                local now = os.clock()
+                local cur = getCurrentCount()
+
+                if cur and cur >= SELL_TARGET and (not isSelling) and now >= nextAllowedSellAt then
+                    isSelling = true
+
+                    local hrp, char = getHRP()
+                    if hrp then
+                        -- (1) Save basis sebelum teleport
+                        local savedBasis = captureBasis(hrp.CFrame)
+
+                        -- (2) Teleport ke seller
+                        hrp.CFrame = CFrame.new(sellerPos)
+
+                        -- (3) Invoke remote (tunggu dikit biar server register pos)
+                        task.wait(0.4)
+                        local sellRemote = resolveSellRemote()
+                        if sellRemote then
+                            pcall(function() sellRemote:InvokeServer() end)
+                        end
+
+                        -- optional sinkronisasi lokal
+                        if typeof(Stats_Reset)  == "function" then pcall(Stats_Reset) end
+                        if typeof(NotifyHub)    == "function" then pcall(NotifyHub, "Sold all fishes & reset local stats") end
+
+                        -- (3b) Tunggu BagSize benar2 turun (atau timeout 3.0s)
+                        local startCount = cur
+                        local t0 = os.clock()
+                        while os.clock() - t0 < 3.0 do
+                            local c = getCurrentCount()
+                            if c and startCount and c < startCount then
+                                break
+                            end
+                            task.wait(0.1)
+                        end
+
+                        -- (4) Balik ke basis saved
+                        task.wait(0.2)
+                        restoreFromBasis(hrp, savedBasis)
+
+                        -- (opsional) “kunci” state fisik dikit
+                        task.wait(0.05)
+                        pcall(function()
+                            local hum = char and char:FindFirstChildOfClass("Humanoid")
+                            if hum then hum:Move(Vector3.zero) end
+                        end)
+
+                        -- (5) Cooldown biar loop gak langsung nyamber lagi
+                        nextAllowedSellAt = os.clock() + 1.5
+                    end
+
+                    isSelling = false
+                end
+
+                task.wait(0.15)
+            end
+        end)
+    end
+})
+
+-- Section Save POS
+local SaveSection = Tabs.Main:AddSection("Save POS")
+
+local function _getHRP()
+    local cf = workspace:FindFirstChild("Characters")
+    local char = (cf and cf:FindFirstChild(LocalPlayer.Name)) or LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+getgenv().__LH_SavedPos      = getgenv().__LH_SavedPos or {}
+getgenv().__LH_PosCounter    = getgenv().__LH_PosCounter or 0
+getgenv().__LH_DefaultPos    = getgenv().__LH_DefaultPos or nil
+
+local SavedPos         = getgenv().__LH_SavedPos
+local SelectedPosName  = nil
+local AutoInPosEnabled = false
+local NotAtPosSeconds  = 0
+local DIST_TOLERANCE   = 8
+
+-- cf ↔ table
+local function cf_to_tbl(cf)
+    local x,y,z, r00,r01,r02, r10,r11,r12, r20,r21,r22 = cf:GetComponents()
+    return {x=x,y=y,z=z,r00=r00,r01=r01,r02=r02,r10=r10,r11=r11,r12=r12,r20=r20,r21=r21,r22=r22}
+end
+local function tbl_to_cf(t)
+    return CFrame.new(t.x,t.y,t.z, t.r00,t.r01,t.r02, t.r10,t.r11,t.r12, t.r20,t.r21,t.r22)
+end
+
+-- file save
+local SAVE_FILE = "LimitHub/FishIT/saved/positions.json"
+
+local function ensure_dirs()
+    pcall(function()
+        if not isfolder("LimitHub") then makefolder("LimitHub") end
+        if not isfolder("LimitHub/FishIT") then makefolder("LimitHub/FishIT") end
+        if not isfolder("LimitHub/FishIT/saved") then makefolder("LimitHub/FishIT/saved") end
+    end)
+end
+
+local function read_positions()
+    ensure_dirs()
+    local ok, body = pcall(readfile, SAVE_FILE)
+    if ok and body and #body > 0 then
+        local ok2, obj = pcall(function() return HttpService:JSONDecode(body) end)
+        if ok2 and type(obj) == "table" then return obj end
+    end
+    return { counter = 0, list = {}, default_name = nil }
+end
+
+local function write_positions(tbl)
+    ensure_dirs()
+    local ok, body = pcall(function() return HttpService:JSONEncode(tbl) end)
+    if ok then pcall(writefile, SAVE_FILE, body) end
+end
+
+local function persist_saved_positions()
+    local data = {
+        counter = getgenv().__LH_PosCounter,
+        default_name = getgenv().__LH_DefaultPos,
+        list = {}
+    }
+    for name, cf in pairs(SavedPos) do
+        table.insert(data.list, {name = name, cf = cf_to_tbl(cf)})
+    end
+    write_positions(data)
+end
+
+local function load_saved_positions()
+    local data = read_positions()
+    getgenv().__LH_PosCounter = data.counter or 0
+    getgenv().__LH_DefaultPos = data.default_name or nil
+    if type(data.list) == "table" then
+        for _, entry in ipairs(data.list) do
+            if entry.name and entry.cf then
+                SavedPos[entry.name] = tbl_to_cf(entry.cf)
+            end
+        end
+    end
+end
+
+-- dropdown
+local PosDropdown = SaveSection:AddDropdown("ListPosDropdown", {
+    Title = "List Pos",
+    Values = {},
+    Default = nil,
+    Multi = false,
+    Callback = function(v) SelectedPosName = v end
+})
+
+local function NamesFromSaved()
+    local names = {}
+    for n,_ in pairs(SavedPos) do table.insert(names, n) end
+    table.sort(names)
+    return names
+end
+
+local function RefreshPosDropdown()
+    local names = NamesFromSaved()
+    if PosDropdown and PosDropdown.SetValues then
+        PosDropdown:SetValues(names)
+    else
+        PosDropdown.Values = names
+    end
+    if SelectedPosName and not SavedPos[SelectedPosName] then
+        SelectedPosName = nil
+    end
+end
+
+-- load awal
+load_saved_positions()
+RefreshPosDropdown()
+
+-- set default dari file / last save
+if getgenv().__LH_DefaultPos and SavedPos[getgenv().__LH_DefaultPos] then
+    SelectedPosName = getgenv().__LH_DefaultPos
+else
+    local names = NamesFromSaved()
+    if #names > 0 then
+        SelectedPosName = names[#names]
+        getgenv().__LH_DefaultPos = SelectedPosName
+        persist_saved_positions()
+    end
+end
+if SelectedPosName then
+    if PosDropdown.SetValue then PosDropdown:SetValue(SelectedPosName) end
+end
+
+-- toggle auto in pos
+SaveSection:AddToggle("AutoInPosToggle", {
+    Title = "Auto in Pos",
+    Description = "Auto back to pos after 5s",
+    Default = false,
+    Callback = function(on)
+        AutoInPosEnabled = not not on
+        NotAtPosSeconds = 0
+        if on and SelectedPosName then
+            getgenv().__LH_DefaultPos = SelectedPosName
+            persist_saved_positions()
+        end
+    end
+})
+
+-- loop auto balik
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if AutoInPosEnabled and SelectedPosName and SavedPos[SelectedPosName] then
+            local hrp = _getHRP()
+            if hrp then
+                local target = SavedPos[SelectedPosName]
+                local dist = (hrp.Position - target.Position).Magnitude
+                if dist <= DIST_TOLERANCE then
+                    NotAtPosSeconds = 0
+                else
+                    NotAtPosSeconds = NotAtPosSeconds + 0.5
+                    if NotAtPosSeconds >= 5 then
+                        hrp.CFrame = target
+                        NotAtPosSeconds = 0
+                        NotifyHub("Returned to "..SelectedPosName)
+                        local args = {1}
+                        local RS = game:GetService("ReplicatedStorage")
+                        RS.Packages._Index["sleitnick_net@0.2.0"].net["RE/EquipToolFromHotbar"]:FireServer(unpack(args))
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- save pos
+SaveSection:AddButton({
+    Title = "Save Pos",
+    Description = "Save current position",
+    Callback = function()
+        local hrp = _getHRP()
+        if not hrp then return end
+        getgenv().__LH_PosCounter = getgenv().__LH_PosCounter + 1
+        local name = ("Saved Pos %d"):format(getgenv().__LH_PosCounter)
+        SavedPos[name] = hrp.CFrame
+        getgenv().__LH_DefaultPos = name
+        persist_saved_positions()
+        RefreshPosDropdown()
+        if PosDropdown.SetValue then PosDropdown:SetValue(name) end
+        SelectedPosName = name
+        NotifyHub("Saved "..name.." (set as default)")
+    end
+})
+
+-- delete pos
+SaveSection:AddButton({
+    Title = "Delete Save Pos",
+    Description = "Delete selected pos",
+    Callback = function()
+        if not SelectedPosName or not SavedPos[SelectedPosName] then
+            NotifyHub("No pos selected")
+            return
+        end
+        SavedPos[SelectedPosName] = nil
+        if getgenv().__LH_DefaultPos == SelectedPosName then
+            getgenv().__LH_DefaultPos = nil
+        end
+        persist_saved_positions()
+        RefreshPosDropdown()
+        NotifyHub("Deleted "..SelectedPosName)
+        SelectedPosName = nil
+    end
+})
+
+-- ================== AUTO FAVORITE ==================
+local AutoFavSection = Tabs.Main:AddSection("Auto Favorite")
+
+-- Safe require helpers
+local function safeRequire(pathArray)
+    local inst = ReplicatedStorage
+    for _,name in ipairs(pathArray) do
+        inst = inst:FindFirstChild(name)
+        if not inst then return nil end
+    end
+    if not inst:IsA("ModuleScript") then return nil end
+    local ok, mod = pcall(require, inst)
+    if ok then return mod end
+    return nil
+end
+
+-- Try require core modules (do not crash if missing)
+local TierUtility       = safeRequire({"Shared","TierUtility"})
+local ItemUtility       = safeRequire({"Shared","ItemUtility"})
+local ItemStringUtility = safeRequire({"Shared","ItemStringUtility"})
+
+-- Try find Replion safely (global or from Packages/_Index)
+local Replion = rawget(_G,"Replion") or (getgenv and getgenv().Replion) or nil
+if not Replion then
+    local idx = ReplicatedStorage:FindFirstChild("Packages")
+                 and ReplicatedStorage.Packages:FindFirstChild("_Index")
+    if idx then
+        for _, folder in ipairs(idx:GetChildren()) do
+            local repl = folder:FindFirstChild("replion") or folder:FindFirstChild("Replion")
+            if repl and repl:IsA("ModuleScript") then
+                local ok, mod = pcall(require, repl)
+                if ok then Replion = mod break end
+            end
+        end
+    end
+end
+
+-- net & REFavoriteItem
+local net2 = ReplicatedStorage:WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net")
+local REFavoriteItem = net2:WaitForChild("RE/FavoriteItem")
+
+local FavState = {
+    enabled = false,
+    selected = {},  -- map lowercased rarity -> true
+    lastRunAt = 0,
+    interval = 6,
+}
+
+local RarityDropdownValues = {
+    Common     = "Common",
+    Uncommon   = "Uncommon",
+    Rare       = "Rare",
+    Epic       = "Epic",
+    Legendary  = "Legendary",
+    Mythic     = "Mythic",
+    Secret     = "Secret",
+}
+local function _lw(s) return (tostring(s or ""):lower()) end
+
+local function getTierNameFromItemId(itemId)
+    if not ItemUtility then return nil end
+    local baseItem = ItemUtility:GetItemData(itemId)
+    if not baseItem then return nil end
+
+    local data = baseItem.Data or baseItem.data or baseItem
+    local chance = data and data.Probability and tonumber(data.Probability.Chance) or nil
+
+    if chance and TierUtility and TierUtility.GetTierFromRarity then
+        local td = TierUtility.GetTierFromRarity(nil, chance)
+        if td and td.Name then return tostring(td.Name) end
+    end
+
+    local TierMap2 = {
+        [1]="Common",[2]="Uncommon",[3]="Rare",[4]="Epic",
+        [5]="Legendary",[6]="Mythic",[7]="Secret",
+    }
+    if data and data.Tier and TierMap2[data.Tier] then
+        return TierMap2[data.Tier]
+    end
+    return nil
+end
+
+local function favoriteBySelectedRarities()
+    if not Replion then return 0, "Replion module not found" end
+
+    local DataReplion = Replion.Client and Replion.Client:WaitReplion("Data")
+    if not DataReplion then return 0, "Data replion not available" end
+
+    local invWrap = DataReplion:Get({"Inventory"})
+    if not invWrap or not invWrap.Items then return 0 end
+
+    local count = 0
+    for _, v in pairs(invWrap.Items) do
+        if not v.Favorited and v.Id then
+            local tierName = getTierNameFromItemId(v.Id)
+            if tierName and FavState.selected[_lw(tierName)] then
+                if v.UUID then
+                    pcall(function() REFavoriteItem:FireServer(v.UUID) end)
+                    count += 1
+                end
+            end
+        end
+    end
+    return count
+end
+
+AutoFavSection:AddDropdown("FavRarityDropdown", {
+    Title = "Choose Rarities to Favorite",
+    Description = "Auto favorite fish by rarity",
+    Values = RarityDropdownValues,
+    Default = {},
+    Multi = true,
+    Callback = function(map)
+        FavState.selected = {}
+        if type(map) == "table" then
+            for label, chosen in pairs(map) do
+                if chosen then FavState.selected[_lw(label)] = true end
+            end
+        end
+    end
+})
+
+AutoFavSection:AddToggle("FavRarityToggle", {
+    Title = "Enable Auto Favorite",
+    Description = "Periodically favorites items of chosen rarities",
+    Default = false,
+    Callback = function(on)
+        FavState.enabled = not not on
+        if FavState.enabled then
+            local n, err = favoriteBySelectedRarities()
+            if err and NotifyHub then
+                NotifyHub("Auto Favorite warning: "..tostring(err))
+            elseif (n or 0) > 0 and NotifyHub then
+                NotifyHub(("Favorited %d items (initial)"):format(n))
+            end
+        end
+    end
+})
+
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if FavState.enabled then
+            local now = os.clock()
+            if now - (FavState.lastRunAt or 0) >= FavState.interval then
+                FavState.lastRunAt = now
+                local _, err = favoriteBySelectedRarities()
+                if err and NotifyHub then
+                    NotifyHub("Auto Favorite warning: "..tostring(err))
+                end
+            end
+        end
+    end
+end)
+
+-- ================= Player Section =================
 local PlayerSection = Tabs.Player:AddSection("Player Features")
 PlayerSection:AddSlider("WalkSpeed", {
     Title = "WalkSpeed", Description = "Adjust walk speed",
@@ -761,6 +1412,62 @@ PlayerSection:AddSlider("JumpPower", {
         if hum then
             hum.UseJumpPower = true
             hum.JumpPower = val
+        end
+    end
+})
+
+
+
+-- ================= Anti AFK =================
+local AfkSection = Tabs.Main:AddSection("Anti AFK")
+
+local RS = game:GetService("ReplicatedStorage")
+local afkModule = RS:WaitForChild("Controllers"):WaitForChild("AFKController")
+
+local OriginalAFK = nil
+
+local function revokeAFK()
+    local ok, AFK = pcall(require, afkModule)
+    if ok and type(AFK) == "table" then
+        if not OriginalAFK then
+            OriginalAFK = {}
+            for k,v in pairs(AFK) do
+                OriginalAFK[k] = v
+            end
+        end
+        for k,v in pairs(AFK) do
+            if type(v) == "function" then
+                AFK[k] = function(...) return nil end
+            end
+        end
+        pcall(function() if AFK.Init then AFK.Init() end end)
+        pcall(function() if AFK.Start then AFK.Start() end end)
+        warn("[LimitHub] AFKController revoked")
+    else
+        warn("AFKController gagal di-require")
+    end
+end
+
+local function restoreAFK()
+    if not OriginalAFK then return end
+    local ok, AFK = pcall(require, afkModule)
+    if ok and type(AFK) == "table" then
+        for k,v in pairs(OriginalAFK) do
+            AFK[k] = v
+        end
+        warn("[LimitHub] AFKController restored")
+    end
+end
+
+AfkSection:AddToggle("AntiAFKToggle", {
+    Title = "Enable Anti AFK",
+    Description = "Bypass AFK Detect",
+    Default = false,
+    Callback = function(state)
+        if state then
+            revokeAFK()
+        else
+            restoreAFK()
         end
     end
 })
@@ -797,20 +1504,28 @@ local function __purchaseAll(list)
     for _, w in ipairs(list) do __purchaseWeather(w) end
 end
 
--- Multi-select: Values = dictionary label->string, Default = {} (map terpilih)
+task.spawn(function()
+    while task.wait(10) do
+        if __autoWeatherOn and #__selectedWeathers > 0 then
+            __purchaseAll(__selectedWeathers)
+        end
+    end
+end)
+
 local WeatherValues = {
     Wind    = "Wind",
     Cloudy  = "Cloudy",
     Snow    = "Snow",
     Strom   = "Strom",
     Radiant = "Radiant",
+    ["Shark Hunt"] = "Shark Hunt",
 }
 
 WeatherSection:AddDropdown("WeatherChoice", {
     Title = "Weather Preset",
     Values = WeatherValues,
     Multi  = true,
-    Default = {},  -- kosong (hindari string tunggal di loader)
+    Default = {},
     Callback = function(valMap)
         __selectedWeathers = {}
         if type(valMap) == "table" then
@@ -819,10 +1534,6 @@ WeatherSection:AddDropdown("WeatherChoice", {
             end
         elseif type(valMap) == "string" then
             __selectedWeathers = { valMap }
-        end
-
-        if __autoWeatherOn and #__selectedWeathers > 0 then
-            __purchaseAll(__selectedWeathers)
         end
     end
 })
@@ -839,7 +1550,7 @@ WeatherSection:AddToggle("AutoWeatherToggle", {
     end
 })
 
-
+-- ================= ENCHANT =================
 local EnchantSection = Tabs.Enchant:AddSection("Enchant Rod Option")
 
 local ENCHANT_POS = Vector3.new(3258.40, -1300.65, 1386.94)
@@ -860,24 +1571,19 @@ EnchantSection:AddButton({
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
 
-
         local originalCF = hrp.CFrame
-
 
         hrp.CFrame = CFrame.new(ENCHANT_POS + Vector3.new(0,3,0))
         task.wait(1)
-
 
         pcall(function()
             local args = { "37827319-3977-45e7-b445-ac44cec95386", "EnchantStones" }
             net:WaitForChild("RE/EquipItem"):FireServer(unpack(args))
         end)
 
-
         pcall(function()
             net:WaitForChild("RE/ActivateEnchantingAltar"):FireServer()
         end)
-
 
         task.delay(0.25, function()
             pcall(function()
@@ -891,21 +1597,220 @@ EnchantSection:AddButton({
     end
 })
 
--- ================= SHOP =================
-local BaitIds  = { ["Luck Bait"]=2, ["Midnight Bait"]=3, ["Nature Bait"]=4, ["Chroma Bait"]=5, ["Dark Matter Bait"]=6, ["Corrupt Bait"]=7, ["Aether Bait"]=8 }
-local BaitList = { "Luck Bait","Midnight Bait","Nature Bait","Chroma Bait","Dark Matter Bait","Corrupt Bait","Aether Bait" }
-local ShopSection = Tabs.Shop:AddSection("Bobber Shop")
-ShopSection:AddDropdown("BaitDropdown", {
-    Title = "Select: Bait", Values = BaitList, Default = nil, Multi = false,
+-- ===================== CLEAN SHOP PANELS (FIXED) =====================
+
+-- Single ReplicatedStorage / Net reference (avoid duplicate locals)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Net = ReplicatedStorage
+    :WaitForChild("Packages")
+    :WaitForChild("_Index")
+    :WaitForChild("sleitnick_net@0.2.0")
+    :WaitForChild("net")
+
+-- Remotes (created once, re-used across sections)
+local PurchaseBaitRF = PurchaseBaitRF or Net:WaitForChild("RF/PurchaseBait")
+local PurchaseRodRF  = PurchaseRodRF  or Net:WaitForChild("RF/PurchaseFishingRod")
+local PurchaseBoatRF = PurchaseBoatRF or Net:WaitForChild("RF/PurchaseBoat")
+local PurchaseGearRF = PurchaseGearRF or Net:WaitForChild("RF/PurchaseGear")
+
+-- Global state (single getgenv; do NOT re-declare again)
+local G = (getgenv and getgenv()) or _G
+G.__SelectedBaitId = G.__SelectedBaitId or nil
+G.__SelectedRodId  = G.__SelectedRodId  or nil
+G.__SelectedBoatId = G.__SelectedBoatId or nil
+G.__SelectedItemId = G.__SelectedItemId or nil
+
+-- ---------- BOBBERS / BAIT SHOP ----------
+-- Fallbacks if not defined earlier
+BaitIds = BaitIds or {
+    ["Luck Bait"] = 2,
+    ["Midnight Bait"] = 3,
+    ["Nature Bait"] = 4,
+    ["Chroma Bait"] = 5,
+    ["Dark Matter Bait"] = 6,
+    ["Corrupt Bait"] = 7,
+    ["Aether Bait"] = 8,
+}
+BaitList = BaitList or {
+    "Luck Bait","Midnight Bait","Nature Bait","Chroma Bait",
+    "Dark Matter Bait","Corrupt Bait","Aether Bait"
+}
+
+local BobberSection = Tabs.Shop:AddSection("Bobbers Shop")
+
+BobberSection:AddDropdown("BaitDropdown", {
+    Title = "Select: Bait",
+    Values = BaitList,
+    Default = nil,
+    Multi = false,
     Callback = function(value)
         if not value then return end
-        local id = BaitIds[value]; if not id then return end
-        pcall(function() return PurchaseBaitRF:InvokeServer(id) end)
+        local id = BaitIds[value]
+        if id then
+            G.__SelectedBaitId = id
+            warn(("[Bait] Selected '%s' -> id=%s"):format(value, tostring(id)))
+        else
+            G.__SelectedBaitId = nil
+            warn("[Bait] Unknown selection:", tostring(value))
+        end
     end
 })
 
--- ================= ISLANDS =================
-local IslandsSection = Tabs.Islands:AddSection("Islands Teleport")
+BobberSection:AddButton({
+    Title = "Buy Selected Bait",
+    Description = "",
+    Callback = function()
+        local id = G.__SelectedBaitId
+        if not id then
+            warn("[Bait] Please select a bait first!")
+            return
+        end
+        pcall(function() PurchaseBaitRF:InvokeServer(id) end)
+    end
+})
+
+-- ---------- ROD SHOP ----------
+local RodSection = Tabs.Shop:AddSection("Rod Shop")
+
+local RodIds = {
+    ["Luck Rod"]      = 79,   -- 350
+    ["Carbon Rod"]    = 76,   -- 900
+    ["Grass Rod"]     = 85,   -- 1.5K
+    ["Demascus Rod"]  = 77,   -- 3K
+    ["Ice Rod"]       = 78,   -- 5K
+    ["Lucky Rod"]     = 4,    -- 15K
+    ["Angler Rod"]    = 168,  -- 8,000K
+    ["Ares Rod"]      = 126,  -- 3,000K
+    ["Astral Rod"]    = 5,    -- 1,000K
+    ["Chrome Pod"]    = 7,    -- 437K
+    ["Midnight Rod"]  = 80,   -- 50K
+    ["Steampunk Rod"] = 6,    -- 215K
+}
+
+local RodList = {
+    "Luck Rod","Carbon Rod","Grass Rod","Demascus Rod","Ice Rod","Lucky Rod",
+    "Angler Rod","Ares Rod","Astral Rod","Chrome Pod","Midnight Rod","Steampunk Rod"
+}
+
+RodSection:AddDropdown("RodDropdown", {
+    Title   = "Select Rod",
+    Values  = RodList,
+    Default = nil,
+    Multi   = false,
+    Callback = function(value)
+        local id = value and RodIds[value]
+        if not id then
+            G.__SelectedRodId = nil
+            warn("[Rod] Unknown selection:", tostring(value))
+            return
+        end
+        G.__SelectedRodId = id
+        warn(("[Rod] Selected '%s' -> id=%s"):format(value, tostring(id)))
+    end
+})
+
+RodSection:AddButton({
+    Title = "Buy Selected Rod",
+    Description = "Purchase the rod selected in the dropdown",
+    Callback = function()
+        local id = G.__SelectedRodId
+        if not id then
+            warn("[Rod] Please select a rod first!")
+            return
+        end
+        pcall(function() PurchaseRodRF:InvokeServer(id) end)
+    end
+})
+
+-- ---------- BOAT SHOP ----------
+local BoatSection = Tabs.Shop:AddSection("Boat Shop")
+
+local BoatIds = {
+    ["Small Boat"]     = 1, -- 300
+    ["Kayak"]          = 2, -- 1.1k
+    ["Jetski"]         = 3, -- 7.5k
+    ["Highfield Boat"] = 4, -- 25k
+    ["Speed Boat"]     = 5, -- 70k
+    ["Fishing Boat"]   = 6, -- 180k
+    ["Mini Yacht"]     = 7, -- 1.20m
+}
+
+local BoatList = {
+    "Small Boat","Kayak","Jetski","Highfield Boat","Speed Boat","Fishing Boat","Mini Yacht"
+}
+
+BoatSection:AddDropdown("BoatDropdown", {
+    Title   = "Select Boat",
+    Values  = BoatList,
+    Default = nil,
+    Multi   = false,
+    Callback = function(value)
+        local id = value and BoatIds[value]
+        if not id then
+            G.__SelectedBoatId = nil
+            warn("[Boat] Unknown selection:", tostring(value))
+            return
+        end
+        G.__SelectedBoatId = id
+        warn(("[Boat] Selected '%s' -> id=%s"):format(value, tostring(id)))
+    end
+})
+
+BoatSection:AddButton({
+    Title = "Buy Selected Boat",
+    Description = "Purchase the boat selected in the dropdown",
+    Callback = function()
+        local id = G.__SelectedBoatId
+        if not id then
+            warn("[Boat] Please select a boat first!")
+            return
+        end
+        pcall(function() PurchaseBoatRF:InvokeServer(id) end)
+    end
+})
+
+-- ---------- ITEMS SHOP ----------
+local ItemsSection = Tabs.Shop:AddSection("Items Shop")
+
+local ItemIds = {
+    ["Diving Gear"]   = 105,
+    ["Fishing Radar"] = 81,
+}
+
+local ItemList = { "Diving Gear", "Fishing Radar" }
+
+ItemsSection:AddDropdown("ItemDropdown", {
+    Title   = "Select Item",
+    Values  = ItemList,
+    Default = nil,
+    Multi   = false,
+    Callback = function(value)
+        local id = value and ItemIds[value]
+        if not id then
+            G.__SelectedItemId = nil
+            warn("[Item] Unknown selection:", tostring(value))
+            return
+        end
+        G.__SelectedItemId = id
+        warn(("[Item] Selected '%s' -> id=%s"):format(value, tostring(id)))
+    end
+})
+
+ItemsSection:AddButton({
+    Title = "Buy Selected Item",
+    Description = "Purchase the item selected in the dropdown",
+    Callback = function()
+        local id = G.__SelectedItemId
+        if not id then
+            warn("[Item] Please select an item first!")
+            return
+        end
+        pcall(function() PurchaseGearRF:InvokeServer(id) end)
+    end
+})
+
+
+local IslandsSection = Tabs.Teleport:AddSection("Islands Teleport")
 local islandCoordsList = {
     ["01"]={name="Weather Machine", position=Vector3.new(-1471,-3,1929)},
     ["02"]={name="Esoteric Depths", position=Vector3.new(3157,-1303,1439)},
@@ -933,9 +1838,67 @@ for _, data in pairs(islandCoordsList) do
         end
     })
 end
+-- ================= TELEPORT TO PLAYER (DisplayName) =================
+local TPPlayerSection = Tabs.Teleport:AddSection("Teleport to Player")
+
+local SelectedPlayer = nil
+local PlayerDropdown
+local DisplayNameToUser = {} -- mapping DisplayName -> Username
+
+local function RefreshPlayerList()
+    local displayNames = {}
+    DisplayNameToUser = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            table.insert(displayNames, p.DisplayName)
+            DisplayNameToUser[p.DisplayName] = p.Name
+        end
+    end
+    if PlayerDropdown then
+        TPPlayerSection:Remove(PlayerDropdown)
+    end
+    PlayerDropdown = TPPlayerSection:AddDropdown("PlayerListDropdown", {
+        Title = "Select Player",
+        Values = displayNames,
+        Default = nil,
+        Multi = false,
+        Callback = function(value)
+            SelectedPlayer = value
+        end
+    })
+end
+
+RefreshPlayerList()
+Players.PlayerAdded:Connect(RefreshPlayerList)
+Players.PlayerRemoving:Connect(RefreshPlayerList)
+
+TPPlayerSection:AddButton({
+    Title = "Teleport to the Player!",
+    Description = "Teleport to selected player",
+    Callback = function()
+        if not SelectedPlayer then
+            NotifyHub("Please select a player first!")
+            return
+        end
+        local username = DisplayNameToUser[SelectedPlayer]
+        local target = username and Players:FindFirstChild(username)
+        if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+            local charFolder = workspace:FindFirstChild("Characters", 5)
+            local char = charFolder and charFolder:FindFirstChild(LocalPlayer.Name)
+            if not char then return end
+            local myHRP = char:FindFirstChild("HumanoidRootPart")
+            if myHRP then
+                myHRP.CFrame = target.Character.HumanoidRootPart.CFrame + Vector3.new(0,3,0)
+                NotifyHub("Teleported to "..SelectedPlayer)
+            end
+        else
+            NotifyHub("Target player not found!")
+        end
+    end
+})
 
 -- ================= NPC =================
-local NPCSection = Tabs.NPC:AddSection("NPC Teleport")
+local NPCSection = Tabs.Teleport:AddSection("NPC Teleport")
 local npcFolder = ReplicatedStorage:WaitForChild("NPC")
 for _, npc in pairs(npcFolder:GetChildren()) do
     if npc:IsA("Model") then
@@ -955,7 +1918,216 @@ for _, npc in pairs(npcFolder:GetChildren()) do
     end
 end
 
--- ================= SETTINGS =================
+-- ================= EVENT HUNT (Smart Event Hunter FA) ================
+local EventSection = Tabs.Event:AddSection("Auto Event")
+
+-- ===== Global env / default states =====
+local G = (getgenv and getgenv()) or _G
+G.autoEvent           = G.autoEvent or false          -- flag utama toggle
+G.savedCFrame         = G.savedCFrame or nil          -- posisi/orientasi semula
+G.__AutoEvent_Running = G.__AutoEvent_Running or false
+G.__AutoEvent_Task    = G.__AutoEvent_Task or nil
+G.__FA_Active         = G.__FA_Active or false        -- status Fake Anchor aktif?
+
+-- Optional states dari ekosistem kamu (biarin kalau belum ada)
+G.toggleState = G.toggleState or { bool_autoFish = false, autoFish = false }
+
+-- ===== Services =====
+local Players    = game:GetService("Players")
+local Workspace  = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+
+-- ===== Helpers =====
+local function safeSetToggle(tg, state)
+    pcall(function()
+        if tg and typeof(tg.Set) == "function" then
+            tg:Set(state)
+        elseif tg and typeof(tg.SetState) == "function" then
+            tg:SetState(state)
+        end
+    end)
+end
+
+local function safeFloating(on)
+    pcall(function()
+        if floatingPlat then floatingPlat(on) end
+    end)
+end
+
+local function getHRP()
+    local chars = Workspace:FindFirstChild("Characters")
+    local my    = chars and chars:FindFirstChild(LocalPlayer.Name)
+    return my and my:FindFirstChild("HumanoidRootPart") or nil
+end
+
+-- ---------- Fake Anchor (tanpa Anchored=true) ----------
+local function FA_apply(hrp)
+    if not hrp or G.__FA_Active then return end
+    -- nolkan velocity dulu
+    pcall(function()
+        hrp.AssemblyLinearVelocity = Vector3.new()
+        hrp.AssemblyAngularVelocity = Vector3.new()
+    end)
+    -- lock posisi
+    local bv = Instance.new("BodyVelocity")
+    bv.Name = "__LH_FA_BV"
+    bv.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+    bv.Velocity = Vector3.new(0, 0, 0)
+    bv.Parent = hrp
+
+    -- stabilkan orientasi
+    local bg = Instance.new("BodyGyro")
+    bg.Name = "__LH_FA_BG"
+    bg.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
+    bg.P = 1e5
+    bg.CFrame = hrp.CFrame
+    bg.Parent = hrp
+
+    G.__FA_Active = true
+end
+
+local function FA_release(hrp)
+    if not hrp then hrp = getHRP() end
+    if not hrp then G.__FA_Active = false return end
+    for _, n in ipairs({"__LH_FA_BV","__LH_FA_BG"}) do
+        local obj = hrp:FindFirstChild(n)
+        if obj then pcall(function() obj:Destroy() end) end
+    end
+    -- pastikan bebas gerak lagi
+    pcall(function()
+        hrp.AssemblyLinearVelocity = hrp.AssemblyLinearVelocity
+    end)
+    G.__FA_Active = false
+end
+-- -------------------------------------------------------
+
+local function findEventTargetPos()
+    local props = Workspace:FindFirstChild("Props")
+    if not props then return nil end
+    for _, child in ipairs(props:GetChildren()) do
+        if child:IsA("Model") then
+            if child.PrimaryPart then
+                return child.PrimaryPart.Position
+            else
+                local part = child:FindFirstChildWhichIsA("BasePart")
+                if part then return part.Position end
+            end
+        elseif child:IsA("BasePart") then
+            return child.Position
+        end
+    end
+    return nil
+end
+
+-- =========================================
+-- Main loop (tiap 4 detik; idle saat toggle OFF)
+-- =========================================
+function startAutoEventLoop()
+    if G.__AutoEvent_Running then return end
+    G.__AutoEvent_Running = true
+
+    if G.__AutoEvent_Task then
+        pcall(task.cancel, G.__AutoEvent_Task)
+        G.__AutoEvent_Task = nil
+    end
+
+    G.__AutoEvent_Task = task.spawn(function()
+        while task.wait(4) do
+            local hrp = getHRP()
+
+            -- Toggle OFF → rapikan state + lepas FA lalu lanjut iterasi
+            if not G.autoEvent then
+                safeFloating(false)
+                if G.floatToggle then safeSetToggle(G.floatToggle, false) end
+                G.savedCFrame = nil
+                FA_release(hrp)
+                continue
+            end
+
+            -- Toggle ON
+            safeFloating(true) -- worm event sering di bawah air
+
+            local targetPos = findEventTargetPos()
+            if targetPos and hrp then
+                -- Simpan posisi/orientasi asli sekali saja
+                if not G.savedCFrame then
+                    G.savedCFrame = hrp.CFrame
+                end
+
+                -- Kalau jauh > 75 stud dari event, TP di atasnya (40)
+                local dist = (hrp.Position - targetPos).Magnitude
+                if dist > 75 then
+                    hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 40, 0))
+                end
+
+                -- aktifkan Fake Anchor saat di event
+                FA_apply(hrp)
+
+                -- Pastikan float on
+                if G.floatToggle then
+                    safeSetToggle(G.floatToggle, true)
+                end
+
+                -- Pastikan AutoFish menyala (sinkron sama ekosistem kamu)
+                if not G.toggleState.bool_autoFish then
+                    G.toggleState.bool_autoFish = true
+                end
+                if not G.toggleState.autoFish then
+                    G.toggleState.autoFish = true
+                    if G.autoFishToggle then
+                        safeSetToggle(G.autoFishToggle, true)
+                    end
+                end
+            else
+                -- Props kosong → balik ke origin, lepas FA, & matikan float
+                if G.savedCFrame and hrp then
+                    hrp.CFrame = G.savedCFrame
+                end
+                G.savedCFrame = nil
+                FA_release(hrp)
+                if G.floatToggle then
+                    safeSetToggle(G.floatToggle, false)
+                end
+                safeFloating(false)
+            end
+        end
+    end)
+end
+
+-- Jalankan loop (akan idle bila toggle OFF)
+startAutoEventLoop()
+
+-- =========================================
+-- TOGGLE (LimitHub Section API)
+-- =========================================
+EventSection:AddToggle("EH_SmartHunterFA", {
+    Title   = "Auto Event",
+    Content = "Auto Fish at Event",
+    Default = false,
+    Mode    = "Toggle",
+    Callback = function(state)
+        G.autoEvent = state
+        if state then
+            startAutoEventLoop() -- jaga-jaga kalau loop belum aktif
+        else
+            -- kalau dimatikan manual, langsung lepas FA juga biar aman
+            FA_release(getHRP())
+        end
+    end
+})
+
+-- =========================================
+-- Reset state saat respawn
+-- =========================================
+LocalPlayer.CharacterAdded:Connect(function()
+    -- Saat respawn, matikan float, lepas FA & hapus posisi tersimpan
+    local hrp = getHRP()
+    FA_release(hrp)
+    safeFloating(false)
+    if G.floatToggle then safeSetToggle(G.floatToggle, false) end
+    G.savedCFrame = nil
+end)
+
 local SettingsSection = Tabs.Settings:AddSection("Performance & Server")
 SettingsSection:AddButton({
     Title = "Boost FPS (Maximize Performance)",
@@ -994,7 +2166,7 @@ end
 SettingsSection:AddButton({ Title = "Rejoin Server", Description = "Rejoin the current server", Callback = Rejoin })
 SettingsSection:AddButton({ Title = "Server Hop (New Server)", Description = "Hop to a new server", Callback = ServerHop })
 
--- Catch hook → panggil sendCatchEmbedOnce
+-- ================= Catch hook → panggil sendCatchEmbedOnce =================
 do
     local LP = Players.LocalPlayer
     local PG2 = LP:WaitForChild("PlayerGui")
@@ -1061,16 +2233,16 @@ do
     PG2.DescendantAdded:Connect(function(obj) if obj:IsA("TextLabel") then hookLabel(obj) end end)
 end
 
--- Save/Load config
+-- ================= Save/Load config =================
 local resetcfg = false
 SaveManager:SetLibrary(Library)
-if isfile(CONFIG_PATH) then SaveManager:Load(CONFIG_PATH) end
+if isfile(CONFIG_PATH) then pcall(function() SaveManager:Load(CONFIG_PATH) end) end
 
 local AutoSaveRunning = true
 task.spawn(function()
     while AutoSaveRunning do
         task.wait(1)
-        if not resetcfg then SaveManager:Save(CONFIG_PATH) end
+        if not resetcfg then pcall(function() SaveManager:Save(CONFIG_PATH) end) end
     end
 end)
 
