@@ -40,7 +40,6 @@ end
 if lp.Character then setupDeath(lp.Character) end
 lp.CharacterAdded:Connect(setupDeath)
 
--- Anti-idle
 task.spawn(function()
     lp.Idled:Connect(function()
         VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
@@ -49,7 +48,6 @@ task.spawn(function()
     end)
 end)
 
--- Anti-stuck teleport
 task.spawn(function()
     while true do
         if not lp.Character or not getRoot() then
@@ -59,18 +57,27 @@ task.spawn(function()
     end
 end)
 
--- Auto Rebirth + Upgrade
+-- Priority 1: Purchase Upgrade "1"
 task.spawn(function()
     while true do
         pcall(function()
-            Rebirth:InvokeServer()
-            PurchaseUpgrade:FireServer("10")
+            PurchaseUpgrade:FireServer("1")
         end)
         task.wait(0.001)
     end
 end)
 
--- Auto Upgrade Stand
+-- Priority 2: Rebirth
+task.spawn(function()
+    while true do
+        pcall(function()
+            Rebirth:InvokeServer()
+        end)
+        task.wait(0.001)
+    end
+end)
+
+-- Priority 5: Upgrade Stand (Base)
 task.spawn(function()
     while true do
         pcall(function()
@@ -80,24 +87,7 @@ task.spawn(function()
     end
 end)
 
--- Remove Crushers/Hitboxes
-task.spawn(function()
-    while true do
-        pcall(function()
-            for _, name in pairs({"KillCrushers", "Hitboxes", "Crushers"}) do
-                local folder = workspace:FindFirstChild(name)
-                if folder then
-                    for _, v in pairs(folder:GetChildren()) do
-                        v:Destroy()
-                    end
-                end
-            end
-        end)
-        task.wait(0.001)
-    end
-end)
-
--- Auto Collect Currency
+-- Priority 4: Auto Collect Currency (Bubble)
 task.spawn(function()
     while true do
         if not isAlive() then waitAlive() continue end
@@ -121,7 +111,7 @@ task.spawn(function()
     end
 end)
 
--- Auto Collect Cash from Stands
+-- Priority 6: Auto Collect Cash from Stands
 task.spawn(function()
     while true do
         if not isAlive() then waitAlive() continue end
@@ -151,20 +141,30 @@ task.spawn(function()
     end
 end)
 
--- ============================================
--- AUTO COLLECT ENTITY (DIVINE / EVENT / ADMIN) - PRIORITAS UTAMA
--- ============================================
+-- Remove Crushers/Hitboxes
+task.spawn(function()
+    while true do
+        pcall(function()
+            for _, name in pairs({"KillCrushers", "Hitboxes", "Crushers"}) do
+                local folder = workspace:FindFirstChild(name)
+                if folder then
+                    for _, v in pairs(folder:GetChildren()) do
+                        v:Destroy()
+                    end
+                end
+            end
+        end)
+        task.wait(0.001)
+    end
+end)
 
 local rarityMap = {
-    -- DIVINE
     ["Karkerkar Kurkur"] = "Divine",
     ["Job Job Sahur"] = "Divine",
     ["Esok Sekolah"] = "Divine",
-    -- ADMIN
     ["Ben"] = "Admin",
     ["Smurf Cat"] = "Admin",
     ["Skibidi Toilet"] = "Admin",
-    -- EVENT
     ["Troppi Trippa"] = "Event",
     ["Blueberrinni Octopusini"] = "Event",
     ["Tung Tung Ramadan"] = "Event",
@@ -175,17 +175,12 @@ local rarityMap = {
 
 local rarityPriority = {Divine = 1, Admin = 2, Event = 3}
 
-local function collectEntities()
-    if not isAlive() then waitAlive() end
-    local root = getRoot()
-    if not root then return end
+local detectedEntities = {}
 
+local function scanEntities()
     local EntitiesFolder = workspace:FindFirstChild("EntitiesFolder")
     if not EntitiesFolder then return end
-    local CarryZone = workspace:FindFirstChild("CarryZone")
 
-    -- Kumpulkan semua entity yang valid beserta prioritasnya
-    local targets = {}
     for _, entity in ipairs(EntitiesFolder:GetChildren()) do
         local mesh = entity:FindFirstChild("Mesh")
         local prompt = mesh and mesh:FindFirstChildOfClass("ProximityPrompt")
@@ -198,40 +193,64 @@ local function collectEntities()
             if label:IsA("TextLabel") and label.Text ~= "" then
                 local rarity = rarityMap[label.Text]
                 if rarity then
-                    table.insert(targets, {
-                        name = label.Text,
-                        rarity = rarity,
-                        priority = rarityPriority[rarity] or 99,
-                        mesh = mesh,
-                        prompt = prompt,
-                    })
+                    local id = entity:GetDebugId()
+                    if not detectedEntities[id] then
+                        detectedEntities[id] = {
+                            name = label.Text,
+                            rarity = rarity,
+                            priority = rarityPriority[rarity] or 99,
+                            mesh = mesh,
+                            prompt = prompt,
+                            detectedAt = tick(),
+                            entity = entity,
+                        }
+                        print("[DETECTED - WAITING 15s] [" .. rarity .. "] " .. label.Text)
+                    end
                 end
                 break
             end
         end
     end
+end
 
-    -- Sort berdasarkan prioritas (Divine dulu)
-    table.sort(targets, function(a, b) return a.priority < b.priority end)
+local function collectEntities()
+    if not isAlive() then waitAlive() end
+    local root = getRoot()
+    if not root then return end
 
-    for _, t in ipairs(targets) do
+    local now = tick()
+    local readyTargets = {}
+
+    for id, data in pairs(detectedEntities) do
+        if not data.entity or not data.entity.Parent then
+            detectedEntities[id] = nil
+            continue
+        end
+        if (now - data.detectedAt) >= 15 then
+            table.insert(readyTargets, data)
+        end
+    end
+
+    table.sort(readyTargets, function(a, b) return a.priority < b.priority end)
+
+    local CarryZone = workspace:FindFirstChild("CarryZone")
+
+    for _, t in ipairs(readyTargets) do
+        if not t.entity or not t.entity.Parent then continue end
         if not isAlive() then waitAlive() end
         root = getRoot()
         if not root then return end
 
-        -- Teleport ke entity
         local ok = pcall(function()
             root.CFrame = t.mesh.CFrame + Vector3.new(0, 5, 0)
         end)
         if not ok then continue end
         task.wait(0.4)
 
-        -- Fire prompt
         pcall(function() fireproximityprompt(t.prompt) end)
         task.wait(0.4)
         print("[" .. t.rarity .. "] " .. t.name .. " - COLLECTED")
 
-        -- Bawa ke CarryZone
         if CarryZone then
             pcall(function()
                 root = getRoot()
@@ -241,11 +260,15 @@ local function collectEntities()
             end)
             task.wait(0.8)
         end
+
+        local id = t.entity:GetDebugId()
+        detectedEntities[id] = nil
     end
 end
 
--- Loop utama entity collector (prioritas, jalan terus)
+-- Priority 3: Entity Collector Loop
 while true do
+    pcall(scanEntities)
     pcall(collectEntities)
     task.wait(0.5)
 end
