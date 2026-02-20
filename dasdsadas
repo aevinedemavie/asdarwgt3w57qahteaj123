@@ -1,0 +1,251 @@
+-- Services
+local RS = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local VirtualUser = game:GetService("VirtualUser")
+local TeleportService = game:GetService("TeleportService")
+
+-- Remotes
+local PurchaseUpgrade = RS.Utilities.TypedRemote.PurchaseUpgrade
+local Rebirth = RS.Utilities.TypedRemote.Rebirth
+local UpgradeStand = RS.Utilities.TypedRemote.UpgradeStand
+
+-- Player
+local lp = Players.LocalPlayer
+
+local function getRoot()
+    local char = lp.Character
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function isAlive()
+    local char = lp.Character
+    if not char then return false end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    return hum and hum.Health > 0
+end
+
+local function waitAlive()
+    while not isAlive() do task.wait(0.1) end
+    task.wait(0.5)
+end
+
+local function setupDeath(char)
+    local hum = char:WaitForChild("Humanoid")
+    hum.Died:Connect(function()
+        task.wait(0.3)
+        pcall(function() lp:LoadCharacter() end)
+    end)
+end
+
+if lp.Character then setupDeath(lp.Character) end
+lp.CharacterAdded:Connect(setupDeath)
+
+-- Anti-idle
+task.spawn(function()
+    lp.Idled:Connect(function()
+        VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+        task.wait(1)
+        VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+    end)
+end)
+
+-- Anti-stuck teleport
+task.spawn(function()
+    while true do
+        if not lp.Character or not getRoot() then
+            pcall(function() TeleportService:Teleport(game.PlaceId, lp) end)
+        end
+        task.wait(3)
+    end
+end)
+
+-- Auto Rebirth + Upgrade
+task.spawn(function()
+    while true do
+        pcall(function()
+            Rebirth:InvokeServer()
+            PurchaseUpgrade:FireServer("10")
+        end)
+        task.wait(0.001)
+    end
+end)
+
+-- Auto Upgrade Stand
+task.spawn(function()
+    while true do
+        pcall(function()
+            UpgradeStand:FireServer(math.random(1, 70))
+        end)
+        task.wait(0.001)
+    end
+end)
+
+-- Remove Crushers/Hitboxes
+task.spawn(function()
+    while true do
+        pcall(function()
+            for _, name in pairs({"KillCrushers", "Hitboxes", "Crushers"}) do
+                local folder = workspace:FindFirstChild(name)
+                if folder then
+                    for _, v in pairs(folder:GetChildren()) do
+                        v:Destroy()
+                    end
+                end
+            end
+        end)
+        task.wait(0.001)
+    end
+end)
+
+-- Auto Collect Currency
+task.spawn(function()
+    while true do
+        if not isAlive() then waitAlive() continue end
+        pcall(function()
+            local root = getRoot()
+            if not root then return end
+            local cf = workspace:FindFirstChild("CurrencyFolder")
+            if not cf then return end
+            for _, currency in pairs(cf:GetChildren()) do
+                if not currency or not currency.Parent then continue end
+                local pos = currency:IsA("BasePart") and currency.Position
+                    or (currency:FindFirstChildWhichIsA("BasePart") and currency:FindFirstChildWhichIsA("BasePart").Position)
+                if pos then
+                    root = getRoot()
+                    if not root then return end
+                    root.CFrame = CFrame.new(pos)
+                end
+            end
+        end)
+        task.wait(0.001)
+    end
+end)
+
+-- Auto Collect Cash from Stands
+task.spawn(function()
+    while true do
+        if not isAlive() then waitAlive() continue end
+        pcall(function()
+            local root = getRoot()
+            if not root then return end
+            for _, plot in pairs(workspace.Plots:GetChildren()) do
+                local floors = plot:FindFirstChild("Floors")
+                if not floors then continue end
+                for _, floor in pairs(floors:GetChildren()) do
+                    local stands = floor:FindFirstChild("Stands")
+                    if not stands then continue end
+                    for _, stand in pairs(stands:GetChildren()) do
+                        local cashModel = stand:FindFirstChild("CashModel")
+                        if not cashModel then continue end
+                        local touchPart = cashModel:FindFirstChild("TouchPart")
+                        if not touchPart then continue end
+                        root = getRoot()
+                        if not root then return end
+                        firetouchinterest(root, touchPart, 0)
+                        firetouchinterest(root, touchPart, 1)
+                    end
+                end
+            end
+        end)
+        task.wait(0.001)
+    end
+end)
+
+-- ============================================
+-- AUTO COLLECT ENTITY (DIVINE / EVENT / ADMIN) - PRIORITAS UTAMA
+-- ============================================
+
+local rarityMap = {
+    -- DIVINE
+    ["Karkerkar Kurkur"] = "Divine",
+    ["Job Job Sahur"] = "Divine",
+    ["Esok Sekolah"] = "Divine",
+    -- ADMIN
+    ["Ben"] = "Admin",
+    ["Smurf Cat"] = "Admin",
+    ["Skibidi Toilet"] = "Admin",
+    -- EVENT
+    ["Troppi Trippa"] = "Event",
+    ["Blueberrinni Octopusini"] = "Event",
+    ["Tung Tung Ramadan"] = "Event",
+    ["Esok Lebaran"] = "Event",
+    ["La Vacca Ramadanita"] = "Event",
+    ["Tralaledon"] = "Event",
+}
+
+local rarityPriority = {Divine = 1, Admin = 2, Event = 3}
+
+local function collectEntities()
+    if not isAlive() then waitAlive() end
+    local root = getRoot()
+    if not root then return end
+
+    local EntitiesFolder = workspace:FindFirstChild("EntitiesFolder")
+    if not EntitiesFolder then return end
+    local CarryZone = workspace:FindFirstChild("CarryZone")
+
+    -- Kumpulkan semua entity yang valid beserta prioritasnya
+    local targets = {}
+    for _, entity in ipairs(EntitiesFolder:GetChildren()) do
+        local mesh = entity:FindFirstChild("Mesh")
+        local prompt = mesh and mesh:FindFirstChildOfClass("ProximityPrompt")
+        if not (mesh and prompt) then continue end
+
+        local billboard = entity:FindFirstChild("EntityBillboardTemplate", true)
+        if not billboard then continue end
+
+        for _, label in ipairs(billboard:GetDescendants()) do
+            if label:IsA("TextLabel") and label.Text ~= "" then
+                local rarity = rarityMap[label.Text]
+                if rarity then
+                    table.insert(targets, {
+                        name = label.Text,
+                        rarity = rarity,
+                        priority = rarityPriority[rarity] or 99,
+                        mesh = mesh,
+                        prompt = prompt,
+                    })
+                end
+                break
+            end
+        end
+    end
+
+    -- Sort berdasarkan prioritas (Divine dulu)
+    table.sort(targets, function(a, b) return a.priority < b.priority end)
+
+    for _, t in ipairs(targets) do
+        if not isAlive() then waitAlive() end
+        root = getRoot()
+        if not root then return end
+
+        -- Teleport ke entity
+        local ok = pcall(function()
+            root.CFrame = t.mesh.CFrame + Vector3.new(0, 5, 0)
+        end)
+        if not ok then continue end
+        task.wait(0.4)
+
+        -- Fire prompt
+        pcall(function() fireproximityprompt(t.prompt) end)
+        task.wait(0.4)
+        print("[" .. t.rarity .. "] " .. t.name .. " - COLLECTED")
+
+        -- Bawa ke CarryZone
+        if CarryZone then
+            pcall(function()
+                root = getRoot()
+                if root then
+                    root.CFrame = CarryZone.CFrame + Vector3.new(0, 5, 0)
+                end
+            end)
+            task.wait(0.8)
+        end
+    end
+end
+
+-- Loop utama entity collector (prioritas, jalan terus)
+while true do
+    pcall(collectEntities)
+    task.wait(0.5)
+end
