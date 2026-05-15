@@ -1421,7 +1421,6 @@ end
 				Size=UDim2.fromScale(initPct,1),
 				BackgroundColor3=ACCENT,BorderSizePixel=0,Parent=track,
 			})
-			Corner(4,fill)
 			local knob2=N("Frame",{
 				AnchorPoint=Vector2.new(0.5,0.5),
 				Position=UDim2.fromScale(initPct,0.5),
