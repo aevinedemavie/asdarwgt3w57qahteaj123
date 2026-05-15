@@ -1416,7 +1416,6 @@ end
 				Position=UDim2.new(0,12,0,30),Size=UDim2.new(1,-24,0,5),
 				BackgroundColor3=C.TRACK,BorderSizePixel=0,Parent=fr,
 			})
-			Corner(4,track)
 			local initPct = (default-mn)/(mx-mn)
 			local fill=N("Frame",{
 				Size=UDim2.fromScale(initPct,1),
@@ -1429,6 +1428,7 @@ end
 				Size=UDim2.fromOffset(13,13),
 				BackgroundColor3=C.WHITE,BorderSizePixel=0,ZIndex=3,Parent=track,
 			})
+			Corner(16,knob2)
 			Stroke(ACCENT,2,knob2)
 			local function rnd(n,f) return math.floor(n/f+0.5)*f end
 			local F={}
