@@ -1392,66 +1392,74 @@ end
 
 		function Tab:Toggle(cfg2) return BuildToggle(Tab._Page, cfg2) end
 
-		local function BuildSlider(parent, cfg2)
-			local text=cfg2.Name or "Slider"
-			local mn,mx=cfg2.Min or 0,cfg2.Max or 100
-			local step=cfg2.Step or 1
-			local cb=cfg2.Callback or function() end
-			local flag=cfg2.Flag or text
-			local default=cfg2.Default or mn
-			if Library.Flags[flag]~=nil then default=Library.Flags[flag] end
-			if not cfg2.NoSave then Library.Flags[flag]=default end
-			local fr=MakeCard(46,parent)
-			N("TextLabel",{
-				Font=Enum.Font.GothamBold,Text=text,TextSize=12,TextColor3=C.TEXT,
-				TextXAlignment=Enum.TextXAlignment.Left,BackgroundTransparency=1,
-				Position=UDim2.fromOffset(12,6),Size=UDim2.new(1,-80,0,16),Parent=fr,
+local function BuildSlider(parent, cfg2)
+			local text = cfg2.Name or "Slider"
+			local mn, mx = cfg2.Min or 0, cfg2.Max or 100
+			local step = cfg2.Step or 1
+			local cb = cfg2.Callback or function() end
+			local flag = cfg2.Flag or text
+			local default = cfg2.Default or mn
+			if Library.Flags[flag] ~= nil then default = Library.Flags[flag] end
+			if not cfg2.NoSave then Library.Flags[flag] = default end
+			local fr = N("Frame", {Size=UDim2.new(1,0,0,46), BackgroundColor3=C.CARD, BorderSizePixel=0, Parent=parent})
+			Corner(8, fr)
+			Stroke(C.BORDER, 1, fr)
+			N("TextLabel", {
+				Font=Enum.Font.GothamBold, Text=text, TextSize=12, TextColor3=C.TEXT,
+				TextXAlignment=Enum.TextXAlignment.Left, BackgroundTransparency=1,
+				Position=UDim2.fromOffset(12,6), Size=UDim2.new(1,-80,0,16), Parent=fr,
 			})
-			local ValLbl=N("TextLabel",{
-				Font=Enum.Font.GothamBold,Text=tostring(default),TextSize=11,
-				TextColor3=ACCENT,TextXAlignment=Enum.TextXAlignment.Right,BackgroundTransparency=1,
-				AnchorPoint=Vector2.new(1,0),Position=UDim2.new(1,-12,0,6),Size=UDim2.new(0,60,0,16),Parent=fr,
+			local ValLbl = N("TextLabel", {
+				Font=Enum.Font.GothamBold, Text=tostring(default), TextSize=11,
+				TextColor3=ACCENT, TextXAlignment=Enum.TextXAlignment.Right, BackgroundTransparency=1,
+				AnchorPoint=Vector2.new(1,0), Position=UDim2.new(1,-12,0,6), Size=UDim2.new(0,60,0,16), Parent=fr,
 			})
-			local track=N("Frame",{
-				Position=UDim2.new(0,12,0,30),Size=UDim2.new(1,-24,0,5),
-				BackgroundColor3=C.TRACK,BorderSizePixel=0,Parent=fr,
+			local track = N("Frame", {
+				Position=UDim2.new(0,12,0,30), Size=UDim2.new(1,-24,0,5),
+				BackgroundColor3=C.TRACK, BorderSizePixel=0, Parent=fr,
 			})
+			Corner(4, track)
 			local initPct = (default-mn)/(mx-mn)
-			local fill=N("Frame",{
+			local fill = N("Frame", {
 				Size=UDim2.fromScale(initPct,1),
-				BackgroundColor3=ACCENT,BorderSizePixel=0,Parent=track,
+				BackgroundColor3=ACCENT, BorderSizePixel=0, Parent=track,
 			})
-			local knob2=N("Frame",{
+			Corner(4, fill)
+			local knob2 = N("Frame", {
 				AnchorPoint=Vector2.new(0.5,0.5),
 				Position=UDim2.fromScale(initPct,0.5),
 				Size=UDim2.fromOffset(13,13),
-				BackgroundColor3=C.WHITE,BorderSizePixel=0,ZIndex=3,Parent=track,
+				BackgroundColor3=C.WHITE, BorderSizePixel=0, ZIndex=3, Parent=track,
 			})
-			Corner(16,knob2)
-			Stroke(ACCENT,2,knob2)
-			local function rnd(n,f) return math.floor(n/f+0.5)*f end
-			local F={}
+			Corner(16, knob2)
+			local function rnd(n, f) return math.floor(n/f+0.5)*f end
+			local F = {}
 			function F:Set(v)
-				v=math.clamp(rnd(v,step),mn,mx)
-				if not cfg2.NoSave then Library.Flags[flag]=v end
-				ValLbl.Text=tostring(v)
-				local pct=(v-mn)/(mx-mn)
-				TweenService:Create(fill,FAST,{Size=UDim2.fromScale(pct,1)}):Play()
-				TweenService:Create(knob2,FAST,{Position=UDim2.fromScale(pct,0.5)}):Play()
+				v = math.clamp(rnd(v,step), mn, mx)
+				if not cfg2.NoSave then Library.Flags[flag] = v end
+				ValLbl.Text = tostring(v)
+				local pct = (v-mn)/(mx-mn)
+				TweenService:Create(fill, FAST, {Size=UDim2.fromScale(pct,1)}):Play()
+				TweenService:Create(knob2, FAST, {Position=UDim2.fromScale(pct,0.5)}):Play()
 				cb(v)
 			end
 			function F:Get() return Library.Flags[flag] end
-			function F:Hide() fr.Visible=false end function F:Show() fr.Visible=true end
-			Library.Items[flag]=F RegSearch(text,"slider",F,flag)
-			local drag=false
+			function F:Hide() fr.Visible=false end
+			function F:Show() fr.Visible=true end
+			Library.Items[flag] = F
+			RegSearch(text, "slider", F, flag)
+			local drag = false
 			track.InputBegan:Connect(function(i)
-				if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
-					drag=true F:Set(mn+(mx-mn)*math.clamp((i.Position.X-track.AbsolutePosition.X)/track.AbsoluteSize.X,0,1))
-					i.Changed:Connect(function() if i.UserInputState==Enum.UserInputState.End then drag=false end end)
+				if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+					drag = true
+					F:Set(mn+(mx-mn)*math.clamp((i.Position.X-track.AbsolutePosition.X)/track.AbsoluteSize.X,0,1))
+					i.Changed:Connect(function()
+						if i.UserInputState == Enum.UserInputState.End then drag = false end
+					end)
 				end
 			end)
 			UIS.InputChanged:Connect(function(i)
-				if drag and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then
+				if drag and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
 					F:Set(mn+(mx-mn)*math.clamp((i.Position.X-track.AbsolutePosition.X)/track.AbsoluteSize.X,0,1))
 				end
 			end)
