@@ -7,6 +7,7 @@ local UIS          = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local TextService  = game:GetService("TextService")
 local HttpService  = game:GetService("HttpService")
+local RunService   = game:GetService("RunService")
 local Player       = game:GetService("Players").LocalPlayer
 
 local C = {
@@ -36,10 +37,13 @@ local C = {
 	WARN      = Color3.fromRGB(225, 175, 60),
 	INFO      = Color3.fromRGB(100, 130, 255),
 	DISCORD   = Color3.fromRGB(88, 101, 242),
+	NOTIF_BG  = Color3.fromRGB(18, 19, 26),
 }
 
 local ACCENT     = Color3.fromRGB(100, 130, 255)
 local ACCENT_DIM = Color3.fromRGB(60, 75, 160)
+
+local NOTIF_ICON = "rbxassetid://83166641937787"
 
 local Icons = {
 	player   = "rbxassetid://12120698352",
@@ -539,81 +543,82 @@ function Library:New(config)
 		Padding=UDim.new(0,8),
 		Parent=LeftGroup,
 	})
-if config.Logo then
-    local asset = tostring(config.Logo)
-    if not asset:find("rbxassetid://") then asset="rbxassetid://"..asset end
-    N("ImageLabel",{
-        Image=asset,
-        BackgroundTransparency=1,
-        ScaleType=Enum.ScaleType.Fit,
-        Size=UDim2.fromOffset(24,24),
-        ZIndex=12,
-        Parent=LeftGroup,
-    })
-end
+	if config.Logo then
+		local asset = tostring(config.Logo)
+		if not asset:find("rbxassetid://") then asset="rbxassetid://"..asset end
+		N("ImageLabel",{
+			Image=asset,
+			BackgroundTransparency=1,
+			ScaleType=Enum.ScaleType.Fit,
+			Size=UDim2.fromOffset(24,24),
+			ZIndex=12,
+			Parent=LeftGroup,
+		})
+	end
 
-local titleText = config.Title or "Obsidia"
-local titleSize = TextService:GetTextSize(titleText, 17, Enum.Font.GothamBold, Vector2.new(999,999))
-N("TextLabel",{
-    Text=titleText,
-    Font=Enum.Font.GothamBold,
-    TextSize=17,
-    TextColor3=C.TEXT,
-    TextXAlignment=Enum.TextXAlignment.Left,
-    BackgroundTransparency=1,
-    ZIndex=12,
-    Size=UDim2.fromOffset(titleSize.X+4, 46),
-    Parent=LeftGroup,
-})
+	local titleText = config.Title or "Obsidia"
+	local titleSize = TextService:GetTextSize(titleText, 17, Enum.Font.GothamBold, Vector2.new(999,999))
+	N("TextLabel",{
+		Text=titleText,
+		Font=Enum.Font.GothamBold,
+		TextSize=17,
+		TextColor3=C.TEXT,
+		TextXAlignment=Enum.TextXAlignment.Left,
+		BackgroundTransparency=1,
+		ZIndex=12,
+		Size=UDim2.fromOffset(titleSize.X+4, 46),
+		Parent=LeftGroup,
+	})
 
-if config.Badge then
-    local badgeW = config.Badge.Width or 140
-    local BadgePill = N("Frame",{
-        BackgroundColor3=C.GLASS2,
-        Size=UDim2.fromOffset(badgeW,24),
-        ZIndex=12,
-        BorderSizePixel=0,
-        Parent=LeftGroup,
-    })
-    Corner(12, BadgePill)
-    Stroke(C.BORDER,1,BadgePill)
-    local bx = 9
-    if config.Badge.Icon then
-        local ico = tostring(config.Badge.Icon)
-        if not ico:find("rbxassetid://") then ico="rbxassetid://"..ico end
-        N("ImageLabel",{
-            Image=ico,
-            BackgroundTransparency=1,
-            ScaleType=Enum.ScaleType.Fit,
-            Position=UDim2.fromOffset(7,5),
-            Size=UDim2.fromOffset(14,14),
-            ImageColor3=C.DISCORD,
-            ZIndex=13,
-            Parent=BadgePill,
-        })
-        bx = 26
-    end
-    N("TextLabel",{
-        Text=config.Badge.Text or "",
-        Font=Enum.Font.GothamBold,
-        TextSize=10,
-        TextColor3=C.TEXT_DIM,
-        TextXAlignment=Enum.TextXAlignment.Left,
-        BackgroundTransparency=1,
-        ZIndex=13,
-        Position=UDim2.fromOffset(bx,0),
-        Size=UDim2.new(1,-bx-6,1,0),
-        Parent=BadgePill,
-    })
-    if config.Badge.Link then
-        local link = config.Badge.Link
-        local hit = N("TextButton",{Text="",BackgroundTransparency=1,Size=UDim2.fromScale(1,1),ZIndex=14,Parent=BadgePill})
-        Hover(hit,BadgePill,C.GLASS2,C.CARD_HOV)
-        hit.MouseButton1Click:Connect(function()
-            if setclipboard then setclipboard(link) self:Notify({Title="Link Copied", Content="Invite copied to clipboard.", Type="success", Time=3}) end
-        end)
-    end
-end
+	if config.Badge then
+		local badgeW = config.Badge.Width or 140
+		local BadgePill = N("Frame",{
+			BackgroundColor3=C.GLASS2,
+			Size=UDim2.fromOffset(badgeW,24),
+			ZIndex=12,
+			BorderSizePixel=0,
+			Parent=LeftGroup,
+		})
+		Corner(12, BadgePill)
+		Stroke(C.BORDER,1,BadgePill)
+		local bx = 9
+		if config.Badge.Icon then
+			local ico = tostring(config.Badge.Icon)
+			if not ico:find("rbxassetid://") then ico="rbxassetid://"..ico end
+			N("ImageLabel",{
+				Image=ico,
+				BackgroundTransparency=1,
+				ScaleType=Enum.ScaleType.Fit,
+				Position=UDim2.fromOffset(7,5),
+				Size=UDim2.fromOffset(14,14),
+				ImageColor3=C.DISCORD,
+				ZIndex=13,
+				Parent=BadgePill,
+			})
+			bx = 26
+		end
+		N("TextLabel",{
+			Text=config.Badge.Text or "",
+			Font=Enum.Font.GothamBold,
+			TextSize=10,
+			TextColor3=C.TEXT_DIM,
+			TextXAlignment=Enum.TextXAlignment.Left,
+			BackgroundTransparency=1,
+			ZIndex=13,
+			Position=UDim2.fromOffset(bx,0),
+			Size=UDim2.new(1,-bx-6,1,0),
+			Parent=BadgePill,
+		})
+		if config.Badge.Link then
+			local link = config.Badge.Link
+			local hit = N("TextButton",{Text="",BackgroundTransparency=1,Size=UDim2.fromScale(1,1),ZIndex=14,Parent=BadgePill})
+			Hover(hit,BadgePill,C.GLASS2,C.CARD_HOV)
+			hit.MouseButton1Click:Connect(function()
+				if setclipboard then setclipboard(link) self:Notify({Title="Link Copied", Content="Invite copied to clipboard.", Type="success", Time=3}) end
+			end)
+		end
+	end
+
 	local function makeCtrlBtn(txt, posX)
 		local wrap = N("Frame",{
 			BackgroundColor3=C.GLASS2,
@@ -1030,13 +1035,13 @@ end
 				Parent=NGui,
 				AnchorPoint=Vector2.new(1,1),
 				Position=UDim2.new(1,-18,1,-18),
-				Size=UDim2.new(0,300,1,-40),
+				Size=UDim2.new(0,320,1,-40),
 				BackgroundTransparency=1,
 			})
 			N("UIListLayout",{
 				VerticalAlignment=Enum.VerticalAlignment.Bottom,
 				HorizontalAlignment=Enum.HorizontalAlignment.Right,
-				Padding=UDim.new(0,8),
+				Padding=UDim.new(0,10),
 				Parent=Holder,
 			})
 		end
@@ -1057,71 +1062,87 @@ end
 		elseif nType=="warn" then accentCol = C.WARN
 		else accentCol = ACCENT end
 
-		local iconMap = {
-			success = Icons.check,
-			error   = Icons.alert,
-			warn    = Icons.alert,
-			info    = Icons.info,
-		}
+		local categoryLabel = nType:upper()
 
-		local ts  = TextService:GetTextSize(content, 10, Enum.Font.Gotham, Vector2.new(220, 9999))
 		local hasContent = content and content ~= ""
-		local nh  = hasContent and math.max(ts.Y + 36, 56) or 44
+		local ts = TextService:GetTextSize(content, 11, Enum.Font.Gotham, Vector2.new(232, 9999))
+		local titleTs = TextService:GetTextSize(title, 13, Enum.Font.GothamBold, Vector2.new(232, 9999))
+		local contentH = hasContent and ts.Y or 0
+		local nh = 16 + 14 + 4 + titleTs.Y + (hasContent and (2 + contentH) or 0) + 16
 
 		local NF = N("Frame",{
 			Size=UDim2.new(1,0,0,nh),
-			BackgroundColor3=C.GLASS,
+			BackgroundColor3=C.NOTIF_BG,
+			BackgroundTransparency=0.05,
 			BorderSizePixel=0,
 			ClipsDescendants=true,
 			Parent=Holder,
 		})
-		Corner(10, NF)
+		Corner(16, NF)
 		Stroke(C.BORDER, 1, NF)
 
-		local accentBar = N("Frame",{
-			Size=UDim2.new(0,3,1,0),
-			Position=UDim2.fromOffset(0,0),
-			AnchorPoint=Vector2.new(0,0),
-			BackgroundColor3=accentCol,
-			BorderSizePixel=0,
-			ZIndex=3,
-			Parent=NF,
-		})
-
 		local iconBg = N("Frame",{
-			Size=UDim2.fromOffset(26,26),
-			Position=UDim2.fromOffset(14,math.floor((nh-26)/2)),
+			Size=UDim2.fromOffset(38,38),
+			Position=UDim2.fromOffset(14,14),
 			BackgroundColor3=accentCol,
-			BackgroundTransparency=0.85,
+			BackgroundTransparency=0.82,
 			BorderSizePixel=0,
 			ZIndex=3,
 			Parent=NF,
 		})
-		Corner(7, iconBg)
+		Corner(9, iconBg)
 		N("ImageLabel",{
-			Image=iconMap[nType] or iconMap.info,
+			Image=NOTIF_ICON,
 			BackgroundTransparency=1,
 			ScaleType=Enum.ScaleType.Fit,
 			ImageColor3=accentCol,
 			AnchorPoint=Vector2.new(0.5,0.5),
 			Position=UDim2.fromScale(0.5,0.5),
-			Size=UDim2.fromOffset(13,13),
+			Size=UDim2.fromOffset(22,22),
 			ZIndex=4,
 			Parent=iconBg,
 		})
 
-		local textX = 48
-		local titleY = hasContent and 9 or math.floor((nh-14)/2)
+		local textX = 62
+
+		N("TextLabel",{
+			Font=Enum.Font.GothamBold,
+			Text=categoryLabel,
+			TextSize=9,
+			TextColor3=C.TEXT_MUT,
+			TextXAlignment=Enum.TextXAlignment.Left,
+			BackgroundTransparency=1,
+			Position=UDim2.fromOffset(textX, 16),
+			Size=UDim2.new(1, -textX - 60, 0, 12),
+			ZIndex=4,
+			Parent=NF,
+		})
+
+		local timeLbl = N("TextLabel",{
+			Font=Enum.Font.Gotham,
+			Text=tostring(math.ceil(dur)) .. "s",
+			TextSize=10,
+			TextColor3=C.TEXT_MUT,
+			TextXAlignment=Enum.TextXAlignment.Right,
+			BackgroundTransparency=1,
+			AnchorPoint=Vector2.new(1,0),
+			Position=UDim2.new(1, -14, 0, 16),
+			Size=UDim2.fromOffset(40, 12),
+			ZIndex=4,
+			Parent=NF,
+		})
 
 		N("TextLabel",{
 			Font=Enum.Font.GothamBold,
 			Text=title,
-			TextSize=12,
+			TextSize=13,
 			TextColor3=C.TEXT,
 			TextXAlignment=Enum.TextXAlignment.Left,
+			TextYAlignment=Enum.TextYAlignment.Top,
+			TextWrapped=true,
 			BackgroundTransparency=1,
-			Position=UDim2.fromOffset(textX, titleY),
-			Size=UDim2.new(1,-textX-12,0,14),
+			Position=UDim2.fromOffset(textX, 34),
+			Size=UDim2.new(1, -textX - 14, 0, titleTs.Y),
 			ZIndex=4,
 			Parent=NF,
 		})
@@ -1130,38 +1151,63 @@ end
 			N("TextLabel",{
 				Font=Enum.Font.Gotham,
 				Text=content,
-				TextSize=10,
+				TextSize=11,
 				TextColor3=C.TEXT_DIM,
 				TextXAlignment=Enum.TextXAlignment.Left,
 				TextYAlignment=Enum.TextYAlignment.Top,
-				BackgroundTransparency=1,
 				TextWrapped=true,
-				Position=UDim2.fromOffset(textX, 26),
-				Size=UDim2.new(1,-textX-12,0,ts.Y),
+				BackgroundTransparency=1,
+				Position=UDim2.fromOffset(textX, 34 + titleTs.Y + 2),
+				Size=UDim2.new(1, -textX - 14, 0, contentH),
 				ZIndex=4,
 				Parent=NF,
 			})
 		end
 
-		local prog = N("Frame",{
-			Size=UDim2.new(1,-3,0,2),
-			Position=UDim2.new(0,3,1,-2),
-			BackgroundColor3=accentCol,
-			BackgroundTransparency=0.3,
+		local progTrack = N("Frame",{
+			Size=UDim2.new(1, -28, 0, 2),
+			Position=UDim2.new(0, 14, 1, -8),
+			BackgroundColor3=C.SW_OFF,
+			BackgroundTransparency=0.5,
 			BorderSizePixel=0,
 			ZIndex=5,
 			Parent=NF,
 		})
+		Corner(2, progTrack)
+		local prog = N("Frame",{
+			Size=UDim2.fromScale(1, 1),
+			BackgroundColor3=accentCol,
+			BorderSizePixel=0,
+			ZIndex=6,
+			Parent=progTrack,
+		})
+		Corner(2, prog)
 
-		NF.Position = UDim2.new(1, 320, 0, 0)
-		local slideIn = TweenInfo.new(0.34, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+		NF.Position = UDim2.new(1, 340, 0, 0)
+		local slideIn = TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 		TweenService:Create(NF, slideIn, {Position=UDim2.new(0,0,0,0)}):Play()
-		TweenService:Create(prog, TweenInfo.new(dur, Enum.EasingStyle.Linear), {Size=UDim2.new(0,0,0,2)}):Play()
+		TweenService:Create(prog, TweenInfo.new(dur, Enum.EasingStyle.Linear), {Size=UDim2.fromScale(0, 1)}):Play()
+
+		local startTime = tick()
+		local countConn
+		countConn = RunService.RenderStepped:Connect(function()
+			local remaining = dur - (tick() - startTime)
+			if remaining <= 0 then
+				if countConn then countConn:Disconnect() end
+				return
+			end
+			if timeLbl and timeLbl.Parent then
+				timeLbl.Text = tostring(math.ceil(remaining)) .. "s"
+			else
+				if countConn then countConn:Disconnect() end
+			end
+		end)
 
 		task.delay(dur, function()
-			local slideOut = TweenInfo.new(0.26, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
-			TweenService:Create(NF, slideOut, {Position=UDim2.new(1,320,0,0)}):Play()
-			task.delay(0.3, function()
+			if countConn then countConn:Disconnect() end
+			local slideOut = TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
+			TweenService:Create(NF, slideOut, {Position=UDim2.new(1,340,0,0)}):Play()
+			task.delay(0.32, function()
 				if NF and NF.Parent then NF:Destroy() end
 			end)
 		end)
@@ -1299,30 +1345,30 @@ end
 			table.insert(Library._Search,{label=label,tab=name,widget=widget,wType=wType,flag=flag,switchFunc=switchHere})
 		end
 
-local function BuildButton(parent, cfg2, isDanger)
-    local text = cfg2.Name or cfg2.Text or "Button"
-    local cb = cfg2.Callback or function() end
-    local danger = cfg2.Danger or isDanger
-    local fr = MakeCard(38, parent)
-    local btn = N("TextButton", {
-        Font = Enum.Font.GothamBold, Text = text, TextSize = 11,
-        TextColor3 = C.TEXT,
-        BackgroundColor3 = C.BTN,
-        AutoButtonColor = false, BorderSizePixel = 0,
-        Size = UDim2.new(1,-8,0,30), Position = UDim2.fromOffset(4,4), Parent = fr,
-    })
-    Corner(6, btn)
-    local normal = C.BTN
-    local hov = C.BTN_HOV
-    Hover(btn, btn, normal, hov)
-    Press(btn, btn, normal, Color3.fromRGB(50,53,70))
-    btn.MouseButton1Click:Connect(cb)
-    RegSearch(text, "button", nil, nil)
-    local F = {}
-    function F:Hide() fr.Visible = false end
-    function F:Show() fr.Visible = true end
-    return F
-end
+		local function BuildButton(parent, cfg2, isDanger)
+			local text = cfg2.Name or cfg2.Text or "Button"
+			local cb = cfg2.Callback or function() end
+			local danger = cfg2.Danger or isDanger
+			local fr = MakeCard(38, parent)
+			local btn = N("TextButton", {
+				Font = Enum.Font.GothamBold, Text = text, TextSize = 11,
+				TextColor3 = C.TEXT,
+				BackgroundColor3 = C.BTN,
+				AutoButtonColor = false, BorderSizePixel = 0,
+				Size = UDim2.new(1,-8,0,30), Position = UDim2.fromOffset(4,4), Parent = fr,
+			})
+			Corner(6, btn)
+			local normal = C.BTN
+			local hov = C.BTN_HOV
+			Hover(btn, btn, normal, hov)
+			Press(btn, btn, normal, Color3.fromRGB(50,53,70))
+			btn.MouseButton1Click:Connect(cb)
+			RegSearch(text, "button", nil, nil)
+			local F = {}
+			function F:Hide() fr.Visible = false end
+			function F:Show() fr.Visible = true end
+			return F
+		end
 
 		function Tab:Button(cfg2) return BuildButton(Tab._Page, cfg2, cfg2.Danger) end
 
@@ -1392,7 +1438,7 @@ end
 
 		function Tab:Toggle(cfg2) return BuildToggle(Tab._Page, cfg2) end
 
-local function BuildSlider(parent, cfg2)
+		local function BuildSlider(parent, cfg2)
 			local text = cfg2.Name or "Slider"
 			local mn, mx = cfg2.Min or 0, cfg2.Max or 100
 			local step = cfg2.Step or 1
@@ -1577,29 +1623,29 @@ local function BuildSlider(parent, cfg2)
 				updSubtitle()
 			end
 
-local function Sel(v)
-    if isMulti then
-        if selected[v] then
-            selected[v]=nil
-        else
-            selected[v]=true
-        end
-        local sl={} for k in pairs(selected) do table.insert(sl,k) end Library.Flags[flag]=sl cb(sl)
-    else
-        if allowNone and selected==v then
-            selected=nil Library.Flags[flag]=nil cb(nil)
-        else
-            selected=v Library.Flags[flag]=v cb(v)
-            expanded=false
-            local cnt=0 for _,b in pairs(optionButtons) do if b.Visible then cnt=cnt+1 end end
-            local ch=math.min(math.max(cnt,1),5)*30
-            TweenService:Create(fr,SMOOTH,{Size=UDim2.new(1,0,0,38)}):Play()
-            TweenService:Create(arr,SMOOTH,{Rotation=0}):Play()
-            if sectionUpdate then task.delay(0.05, sectionUpdate) end
-        end
-    end
-    refreshVisualState()
-end
+			local function Sel(v)
+				if isMulti then
+					if selected[v] then
+						selected[v]=nil
+					else
+						selected[v]=true
+					end
+					local sl={} for k in pairs(selected) do table.insert(sl,k) end Library.Flags[flag]=sl cb(sl)
+				else
+					if allowNone and selected==v then
+						selected=nil Library.Flags[flag]=nil cb(nil)
+					else
+						selected=v Library.Flags[flag]=v cb(v)
+						expanded=false
+						local cnt=0 for _,b in pairs(optionButtons) do if b.Visible then cnt=cnt+1 end end
+						local ch=math.min(math.max(cnt,1),5)*30
+						TweenService:Create(fr,SMOOTH,{Size=UDim2.new(1,0,0,38)}):Play()
+						TweenService:Create(arr,SMOOTH,{Rotation=0}):Play()
+						if sectionUpdate then task.delay(0.05, sectionUpdate) end
+					end
+				end
+				refreshVisualState()
+			end
 
 			local function CreateOption(v, i)
 				local opt=N("TextButton",{
