@@ -540,7 +540,7 @@ function Library:New(config)
 	N("UIListLayout",{
 		FillDirection=Enum.FillDirection.Horizontal,
 		VerticalAlignment=Enum.VerticalAlignment.Center,
-		Padding=UDim.new(0,8),
+		Padding=UDim.new(0,4),
 		Parent=LeftGroup,
 	})
 	if config.Logo then
@@ -1183,9 +1183,53 @@ function Library:New(config)
 		})
 		Corner(2, prog)
 
+		local origSize = UDim2.new(1, 0, 0, nh)
+		NF.Size = UDim2.new(0, 0, 0, nh)
 		NF.Position = UDim2.new(1, 340, 0, 0)
+		NF.BackgroundTransparency = 1
+
+		local sizeScale = N("UIScale", {Scale = 0.7, Parent = NF})
+
+		for _, child in ipairs(NF:GetChildren()) do
+			if child:IsA("TextLabel") or child:IsA("ImageLabel") or child:IsA("Frame") then
+				if child:IsA("TextLabel") then
+					child.TextTransparency = 1
+				elseif child:IsA("ImageLabel") then
+					child.ImageTransparency = 1
+				end
+				if child:IsA("Frame") and child ~= prog and child ~= progTrack then
+					local origTrans = child.BackgroundTransparency
+					child:SetAttribute("OrigTrans", origTrans)
+					child.BackgroundTransparency = 1
+				end
+			end
+		end
+
+		local popIn = TweenInfo.new(0.42, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+		local fadeIn = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 		local slideIn = TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-		TweenService:Create(NF, slideIn, {Position=UDim2.new(0,0,0,0)}):Play()
+
+		TweenService:Create(sizeScale, popIn, {Scale = 1}):Play()
+		TweenService:Create(NF, slideIn, {
+			Position = UDim2.new(0, 0, 0, 0),
+			Size = origSize,
+			BackgroundTransparency = 0.05,
+		}):Play()
+
+		task.spawn(function()
+			task.wait(0.08)
+			for _, child in ipairs(NF:GetDescendants()) do
+				if child:IsA("TextLabel") then
+					TweenService:Create(child, fadeIn, {TextTransparency = 0}):Play()
+				elseif child:IsA("ImageLabel") then
+					TweenService:Create(child, fadeIn, {ImageTransparency = 0}):Play()
+				elseif child:IsA("Frame") and child ~= prog and child ~= progTrack then
+					local orig = child:GetAttribute("OrigTrans") or 0
+					TweenService:Create(child, fadeIn, {BackgroundTransparency = orig}):Play()
+				end
+			end
+		end)
+
 		TweenService:Create(prog, TweenInfo.new(dur, Enum.EasingStyle.Linear), {Size=UDim2.fromScale(0, 1)}):Play()
 
 		local startTime = tick()
@@ -1205,9 +1249,26 @@ function Library:New(config)
 
 		task.delay(dur, function()
 			if countConn then countConn:Disconnect() end
-			local slideOut = TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
-			TweenService:Create(NF, slideOut, {Position=UDim2.new(1,340,0,0)}):Play()
-			task.delay(0.32, function()
+			local popOut = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+			local fadeOut = TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
+			local slideOut = TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
+
+			TweenService:Create(sizeScale, popOut, {Scale = 0.7}):Play()
+			TweenService:Create(NF, slideOut, {
+				Position = UDim2.new(1, 340, 0, 0),
+				BackgroundTransparency = 1,
+			}):Play()
+			for _, child in ipairs(NF:GetDescendants()) do
+				if child:IsA("TextLabel") then
+					TweenService:Create(child, fadeOut, {TextTransparency = 1}):Play()
+				elseif child:IsA("ImageLabel") then
+					TweenService:Create(child, fadeOut, {ImageTransparency = 1}):Play()
+				elseif child:IsA("Frame") then
+					TweenService:Create(child, fadeOut, {BackgroundTransparency = 1}):Play()
+				end
+			end
+
+			task.delay(0.36, function()
 				if NF and NF.Parent then NF:Destroy() end
 			end)
 		end)
