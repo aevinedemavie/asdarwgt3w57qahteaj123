@@ -540,6 +540,7 @@ function Library:New(config)
 	N("UIListLayout",{
 		FillDirection=Enum.FillDirection.Horizontal,
 		VerticalAlignment=Enum.VerticalAlignment.Center,
+		SortOrder=Enum.SortOrder.LayoutOrder,
 		Padding=UDim.new(0,4),
 		Parent=LeftGroup,
 	})
@@ -551,6 +552,7 @@ function Library:New(config)
 			BackgroundTransparency=1,
 			ScaleType=Enum.ScaleType.Fit,
 			Size=UDim2.fromOffset(24,24),
+			LayoutOrder=1,
 			ZIndex=12,
 			Parent=LeftGroup,
 		})
@@ -565,6 +567,7 @@ function Library:New(config)
 		TextColor3=C.TEXT,
 		TextXAlignment=Enum.TextXAlignment.Left,
 		BackgroundTransparency=1,
+		LayoutOrder=2,
 		ZIndex=12,
 		Size=UDim2.fromOffset(titleSize.X+4, 46),
 		Parent=LeftGroup,
@@ -572,9 +575,16 @@ function Library:New(config)
 
 	if config.Badge then
 		local badgeW = config.Badge.Width or 140
+		N("Frame",{
+			BackgroundTransparency=1,
+			Size=UDim2.fromOffset(6,1),
+			LayoutOrder=25,
+			Parent=LeftGroup,
+		})
 		local BadgePill = N("Frame",{
 			BackgroundColor3=C.GLASS2,
 			Size=UDim2.fromOffset(badgeW,24),
+			LayoutOrder=30,
 			ZIndex=12,
 			BorderSizePixel=0,
 			Parent=LeftGroup,
